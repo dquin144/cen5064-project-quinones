@@ -9,10 +9,10 @@
 ## Project: AI Portfolio Analyzer
 
 The proposed project is a potfolio analysis application that helps users better understand the performance, composition, and risk of their investment portfolios. The target users of the application would be beginner and intermediate individual investors who want a simple way to understand their investments and make action based on the current market. Core features would include:
-    - allowing users to create a portfolio through manual entry (potentially automatically through API integration)
-    - displaying performance and allocation metrics
-    - generating risk and diversification scores
-    - providing relevant news and recommendations based on the user's holdings
+    * allowing users to create a portfolio through manual entry (potentially automatically through API integration)
+    * displaying performance and allocation metrics
+    * generating risk and diversification scores
+    * providing relevant news and recommendations based on the user's holdings
 
 ## How to run
 
