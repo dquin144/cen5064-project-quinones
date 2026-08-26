@@ -6,10 +6,13 @@
 
 **Student:** [David Quinones] · **Course:** CEN 5064 Software Design, Fall 2026 · **Partner:** [ASantana0924]
 
-## Project (approval paragraph — write this by Sun Aug 30)
+## Project: AI Portfolio Analyzer
 
-[One paragraph: What is the system? Who is it for? What are its 3–4 core features?
-This paragraph is your approval request — see the Project Brief, Section 2.]
+The proposed project is a potfolio analysis application that helps users better understand the performance, composition, and risk of their investment portfolios. The target users of the application would be beginner and intermediate individual investors who want a simple way to understand their investments and make action based on the current market. Core features would include:
+    - allowing users to create a portfolio through manual entry (potentially automatically through API integration)
+    - displaying performance and allocation metrics
+    - generating risk and diversification scores
+    - providing relevant news and recommendations based on the user's holdings
 
 ## How to run
 
