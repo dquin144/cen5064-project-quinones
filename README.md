@@ -28,10 +28,10 @@ instructor will follow it literally on conference days.]
 
 | Tier | Responsibilities in THIS system |
 |------|--------------------------------|
-| Presentation | [what your UI layer does] |
-| Service | [what your use-case/orchestration layer does] |
-| Domain | [your entities and business rules] |
-| Data | [how and where data is stored] |
+| Presentation | Shows the portfolio (holdings, charts, scores) and collects user input (adding holdings, settings) and displays results |
+| Service | Orchestrates the main actions a user takes (adding/editing a holding, generating a portfolio summary, pulling recommendations) by calling Domain to do the actual thinking and Data to fetch/save |
+| Domain | Handles how risk and diversification scores get calculated, what makes a holding/portfolio valid, and how news gets matched to a user's holdings |
+| Data | Stores the user's saved portfolio (holdings, purchase prices) and handles any external APIs (market/price data and news) |
 
 ### C4 — Context & Container (Session 3 studio)
 
