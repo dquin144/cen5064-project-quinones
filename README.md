@@ -34,49 +34,105 @@ instructor will follow it literally on conference days.]
 | Data | Stores the user's saved portfolio (holdings, purchase prices) and handles any external APIs (market/price data and news) |
 
 ### C4 — Context & Container (Session 3 studio)
-
+ 
 ```mermaid
-%% Replace this placeholder with YOUR system's context diagram.
-flowchart TB
-    user([User]) -->|uses| system[Your System]
-    system -->|stores data in| db[(Database)]
+%%{init: {'flowchart': {'nodeSpacing': 40, 'rankSpacing': 60, 'curve': 'basis'}}}%%
+flowchart LR
+    user([Individual Investor]) -->|enters holdings, views scores & recs| system[AI Portfolio Analyzer]
+    system -->|fetches prices & fundamentals| marketApi[[Market Data API]]
+    system -->|fetches articles| newsApi[[News API]]
+    system -->|reads/writes portfolio data| db[(Portfolio Database)]
 ```
-
+ 
 ```mermaid
-%% Container view: your containers should match the tier table above.
-flowchart TB
-    subgraph YourSystem [Your System]
-        ui[Web UI / CLI<br/>Presentation] --> api[Application / Service]
-        api --> domain[Domain Model]
-        domain --> db[(Database<br/>Data tier)]
+%%{init: {'flowchart': {'nodeSpacing': 40, 'rankSpacing': 70, 'curve': 'basis'}}}%%
+flowchart LR
+    user([Individual Investor])
+ 
+    subgraph System [AI Portfolio Analyzer]
+        direction TB
+        ui[Web UI<br/>Presentation<br/>-shows holdings, charts, scores<br/>-collects holding entry & settings]
+        service[Application Service<br/>-orchestrates add/edit holding<br/>-builds portfolio summary<br/>-pulls recommendations]
+        domain[Domain Model<br/>-computes risk & diversification scores<br/>-validates holdings/portfolio<br/>-matches news to holdings]
+        data[Data Layer<br/>-persists holdings & purchase prices<br/>-wraps Market Data & News API clients]
+        ui --> service --> domain
+        service --> data
     end
+ 
+    db[(Portfolio Database)]
+    marketApi[[Market Data API]]
+    newsApi[[News API]]
+ 
+    user --> ui
+    data --> db
+    data --> marketApi
+    data --> newsApi
 ```
-
+ 
 ### UML — Class & Sequence (Session 3 studio)
-
+ 
 ```mermaid
-%% Class diagram: your 3–4 core domain classes.
+%%{init: {'flowchart': {'nodeSpacing': 40, 'rankSpacing': 60}}}%%
 classDiagram
-    class ExampleEntity {
+    direction TB
+    class Portfolio {
         -id: Long
+        -userId: Long
         -name: String
-        +doSomething()
+        -holdings: List~Holding~
+        +addHolding(h: Holding)
+        +removeHolding(holdingId: Long)
+        +totalValue() Decimal
     }
+ 
+    class Holding {
+        -id: Long
+        -tickerSymbol: String
+        -shares: Decimal
+        -purchasePrice: Decimal
+        -purchaseDate: Date
+        -currentPrice: Decimal
+        +marketValue() Decimal
+        +gainLossPercent() Decimal
+    }
+ 
+    class RiskScore {
+        -portfolioId: Long
+        -volatilityScore: Decimal
+        -diversificationScore: Decimal
+        -concentrationWarning: Boolean
+        +overallRiskLabel() String
+    }
+ 
+    Portfolio "1" --> "many" Holding : contains
+    Portfolio "1" --> "1" RiskScore : scored by
 ```
-
+ 
 ```mermaid
-%% Sequence diagram: ONE core use case, end to end.
+%%{init: {'sequence': {'messageMargin': 45, 'mirrorActors': false, 'boxMargin': 15}}}%%
 sequenceDiagram
     actor U as User
-    participant UI
+    participant UI as Web UI
     participant S as Service
+    participant Dom as Domain
     participant D as Data
-    U->>UI: action
-    UI->>S: request
-    S->>D: save/load
-    D-->>S: result
-    S-->>UI: response
-    UI-->>U: confirmation
+    participant N as News API
+ 
+    U->>UI: open portfolio dashboard
+    UI->>S: getRecommendations(portfolioId)
+    S->>D: loadPortfolio(portfolioId)
+    D-->>S: holdings list
+    S->>Dom: identifyRelevantTopics(holdings)
+    Dom-->>S: tickers & keywords
+    S->>D: fetchNews(tickers)
+    D->>N: GET articles(tickers)
+    N-->>D: articles
+    D-->>S: articles
+    S->>Dom: matchNewsToHoldings(articles, holdings)
+    Dom-->>S: ranked recommendations
+    S-->>UI: recommendations list
+    Note right of UI: headline + related ticker +<br/>relevance per holding
+    UI-->>U: recommendations shown
 ```
 
 ## Architecture Decision Records
