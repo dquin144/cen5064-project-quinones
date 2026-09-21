@@ -1,0 +1,10 @@
+{
+  "name": "ai-portfolio-analyzer",
+  "version": "0.1.0",
+  "description": "AI Portfolio Analyzer",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT"
+}
