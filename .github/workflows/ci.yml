@@ -1,0 +1,40 @@
+# CEN 5064 — CI for the JS/NODE track
+# In Session 4: copy this file to .github/workflows/ci.yml , commit, push,
+# then open the Actions tab and watch it run. Green = your build and tests pass.
+#
+# Assumes a Node project (package.json + package-lock.json at the repo root).
+# Yarn variant at the bottom.
+
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and run tests
+        run: npm test
+
+# --- Yarn instead of npm? Replace the last two steps with: ---
+#      - name: Install dependencies
+#        run: yarn install --frozen-lockfile
+#      - name: Build and run tests
+#        run: yarn test
+# (and change `cache: npm` to `cache: yarn`; make sure yarn.lock is committed)
