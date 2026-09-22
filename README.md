@@ -16,6 +16,24 @@ The proposed project is a potfolio analysis application that helps users better 
 
 ## How to run
 
+Clone the repo, then from the repo root:
+\`\`\`
+npm install
+npm test
+\`\`\`
+
+To view the landing page locally:
+- Open the repo in VS Code, install the **Live Server** extension if you
+  don't have it, right-click `public/index.html` in the file tree, and
+  choose **Open with Live Server**. It will open in your browser and
+  auto-refresh on save.
+- Alternatively, open `public/index.html` directly in a browser (double-click
+  the file), or run `npx serve public` and open the printed localhost URL.
+
+There is no backend server yet — this currently only runs the static
+landing page and the CI test suite. This section will be updated once
+the Service/Domain/Data tiers exist and a real dev server is added.
+
 ```
 [Exact commands to build and run your system from a clean clone.
 Update this every time the steps change — your partner and your
