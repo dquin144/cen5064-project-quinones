@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Folio: your portfolio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #FAF7F2;
+    --ink: #1C2B22;
+    --ink-soft: #4A554D;
+    --sage: #3F6B4E;
+    --sage-dark: #2E5039;
+    --error: #A2402E;
+    --line: #DCD5C8;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 0 28px;
+  }
+
+  nav.wrap {
+    padding-top: 28px;
+    padding-bottom: 28px;
+  }
+
+  .logo {
+    font-family: 'Newsreader', serif;
+    font-size: 1.35rem;
+    font-style: italic;
+    color: var(--ink);
+    text-decoration: none;
+  }
+
+  h1, h2 {
+    font-family: 'Newsreader', serif;
+    font-weight: 500;
+  }
+  h1 { font-size: 2.2rem; margin: 16px 0 28px; }
+  h2 { font-size: 1.3rem; margin: 0 0 16px; }
+
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 24px;
+    background: #FFFEFB;
+    margin-bottom: 32px;
+  }
+
+  form {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr) auto;
+    gap: 16px;
+    align-items: start;
+  }
+
+  label {
+    display: block;
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+    margin-bottom: 6px;
+  }
+
+  input {
+    width: 100%;
+    font: inherit;
+    font-size: 0.95rem;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--ink);
+  }
+  input:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; }
+  input[aria-invalid="true"] { border-color: var(--error); }
+
+  .error {
+    color: var(--error);
+    font-size: 0.8rem;
+    margin-top: 6px;
+    min-height: 1em;
+  }
+
+  .btn {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 10px 20px;
+    margin-top: 22px;
+    border-radius: 3px;
+    border: 1px solid transparent;
+    background: var(--sage);
+    color: var(--paper);
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--sage-dark); }
+  .btn:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  th { font-size: 0.82rem; font-weight: 500; color: var(--ink-soft); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td select {
+    font: inherit;
+    font-size: 0.9rem;
+    padding: 4px 6px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--ink);
+  }
+  .empty { color: var(--ink-soft); }
+  .table-scroll { overflow-x: auto; }
+
+  @media (max-width: 780px) {
+    form { grid-template-columns: 1fr 1fr; }
+    .btn { margin-top: 0; }
+  }
+</style>
+</head>
+<body>
+
+  <nav class="wrap">
+    <a href="index.html" class="logo">Folio</a>
+  </nav>
+
+  <main class="wrap">
+    <h1>Your portfolio</h1>
+
+    <section class="card">
+      <h2>Add a holding</h2>
+      <form id="holding-form" novalidate>
+        <div>
+          <label for="ticker">Ticker</label>
+          <input id="ticker" name="ticker" type="text" placeholder="AAPL" autocomplete="off" />
+          <div class="error" id="ticker-error"></div>
+        </div>
+        <div>
+          <label for="shares">Shares</label>
+          <input id="shares" name="shares" type="number" step="any" min="0" placeholder="10" />
+          <div class="error" id="shares-error"></div>
+        </div>
+        <div>
+          <label for="purchasePrice">Purchase price ($)</label>
+          <input id="purchasePrice" name="purchasePrice" type="number" step="0.01" min="0" placeholder="150.00" />
+          <div class="error" id="purchasePrice-error"></div>
+        </div>
+        <div>
+          <label for="purchaseDate">Purchase date</label>
+          <input id="purchaseDate" name="purchaseDate" type="date" />
+          <div class="error" id="purchaseDate-error"></div>
+        </div>
+        <button type="submit" class="btn">Add holding</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Holdings</h2>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th class="num">Shares</th>
+              <th class="num">Purchase price</th>
+              <th>Purchase date</th>
+              <th class="num">Cost basis</th>
+            </tr>
+          </thead>
+          <tbody id="holdings-body"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="empty-msg">No holdings yet. Add your first one above.</p>
+    </section>
+  </main>
+
+<script src="js/domain.js"></script>
+<script src="js/data.js"></script>
+<script src="js/service.js"></script>
+<script>
+  // Presentation only: collects input, calls the Service tier, and draws the result.
+  const FIELDS = ['ticker', 'shares', 'purchasePrice', 'purchaseDate'];
+  const form = document.getElementById('holding-form');
+  const tbody = document.getElementById('holdings-body');
+  const emptyMsg = document.getElementById('empty-msg');
+  const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+  const qty = (n) => n.toLocaleString('en-US');
+
+  document.getElementById('purchaseDate').max = new Date().toLocaleDateString('en-CA');
+
+  function cell(tr, content, cls) {
+    const td = document.createElement('td');
+    if (typeof content === 'string') td.textContent = content;
+    else td.appendChild(content);
+    if (cls) td.className = cls;
+    tr.appendChild(td);
+  }
+
+  // Latest purchase first; the price and date dropdowns stay on the same purchase.
+  function purchaseSelects(row) {
+    const price = document.createElement('select');
+    const date = document.createElement('select');
+    price.setAttribute('aria-label', `Purchase price for ${row.ticker}`);
+    date.setAttribute('aria-label', `Purchase date for ${row.ticker}`);
+    row.purchases.forEach((p, i) => {
+      price.add(new Option(`${money.format(p.purchasePrice)} × ${qty(p.shares)}`, i));
+      date.add(new Option(p.purchaseDate, i));
+    });
+    price.addEventListener('change', () => { date.value = price.value; });
+    date.addEventListener('change', () => { price.value = date.value; });
+    return [price, date];
+  }
+
+  function renderTable() {
+    const rows = getPortfolio();
+    tbody.replaceChildren();
+    for (const row of rows) {
+      const tr = document.createElement('tr');
+      const latest = row.purchases[0];
+      cell(tr, row.ticker);
+      cell(tr, qty(row.shares), 'num');
+      if (row.purchases.length === 1) {
+        cell(tr, money.format(latest.purchasePrice), 'num');
+        cell(tr, latest.purchaseDate);
+      } else {
+        const [price, date] = purchaseSelects(row);
+        cell(tr, price, 'num');
+        cell(tr, date);
+      }
+      cell(tr, money.format(row.costBasis), 'num');
+      tbody.appendChild(tr);
+    }
+    emptyMsg.hidden = rows.length > 0;
+  }
+
+  function showErrors(errors) {
+    for (const field of FIELDS) {
+      document.getElementById(field + '-error').textContent = errors[field] || '';
+      document.getElementById(field).setAttribute('aria-invalid', errors[field] ? 'true' : 'false');
+    }
+  }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const { errors } = addHolding(Object.fromEntries(new FormData(form)));
+    showErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      document.getElementById(Object.keys(errors)[0]).focus();
+      return;
+    }
+    renderTable();
+    form.reset();
+    document.getElementById('ticker').focus();
+  });
+
+  renderTable();
+</script>
+</body>
+</html>
