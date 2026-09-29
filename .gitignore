@@ -23,6 +23,13 @@ venv/
 .DS_Store
 Thumbs.db
 
+# --- Node ---
+node_modules/
+npm-debug.log*
+dist/
+coverage/
+.npm/
+
 # --- Local secrets/config (never commit credentials) ---
 .env
 *.local

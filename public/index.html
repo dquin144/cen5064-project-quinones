@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Folio: smarter insights for smarter investing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #FAF7F2;
+    --ink: #1C2B22;
+    --ink-soft: #4A554D;
+    --sage: #3F6B4E;
+    --sage-dark: #2E5039;
+    --brass: #A6772C;
+    --line: #DCD5C8;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 0 28px;
+  }
+
+  /* Nav */
+  nav.wrap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 28px;
+    padding-bottom: 28px;
+  }
+
+  .logo {
+    font-family: 'Newsreader', serif;
+    font-size: 1.35rem;
+    font-style: italic;
+    letter-spacing: 0.01em;
+  }
+
+  .nav-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .btn {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 10px 20px;
+    border-radius: 3px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+
+  .btn-ghost {
+    color: var(--ink);
+    border-color: var(--line);
+    background: transparent;
+  }
+  .btn-ghost:hover { border-color: var(--ink-soft); }
+
+  .btn-solid {
+    background: var(--sage);
+    color: var(--paper);
+  }
+  .btn-solid:hover { background: var(--sage-dark); }
+
+  /* Hero */
+  .hero {
+    padding-top: 56px;
+    padding-bottom: 72px;
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 56px;
+    align-items: center;
+  }
+
+  .hero h1 {
+    font-family: 'Newsreader', serif;
+    font-weight: 500;
+    font-size: 2.7rem;
+    line-height: 1.16;
+    letter-spacing: -0.01em;
+    margin: 0 0 22px 0;
+    max-width: 17ch;
+  }
+
+  .hero p {
+    font-size: 1.1rem;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    max-width: 42ch;
+    margin: 0 0 32px 0;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 14px;
+  }
+
+  .hero-actions .btn {
+    padding: 13px 26px;
+    font-size: 1rem;
+  }
+
+  /* Hero visual: simple ledger-line chart doodle */
+  .chart-card {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 28px 24px 22px;
+    background: #FFFEFB;
+  }
+
+  .chart-card .label {
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+    margin-bottom: 4px;
+  }
+
+  .chart-card .value {
+    font-family: 'Newsreader', serif;
+    font-size: 1.7rem;
+    margin-bottom: 18px;
+  }
+
+  .chart-card .value span {
+    font-size: 1rem;
+    color: var(--sage-dark);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-weight: 500;
+    margin-left: 8px;
+  }
+
+  .draw-path {
+    stroke-dasharray: 520;
+    stroke-dashoffset: 520;
+    animation: draw 1.6s ease-out 0.2s forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .draw-path { animation: none; stroke-dashoffset: 0; }
+  }
+
+  @keyframes draw {
+    to { stroke-dashoffset: 0; }
+  }
+
+  /* Ledger rule + features */
+  .rule {
+    border: none;
+    border-top: 1px solid var(--line);
+    margin: 0;
+  }
+
+  .features {
+    padding: 52px 0 64px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .feature {
+    padding: 0 28px;
+  }
+
+  .feature:not(:first-child) {
+    border-left: 1px solid var(--line);
+  }
+
+  .feature h3 {
+    font-family: 'Newsreader', serif;
+    font-weight: 500;
+    font-size: 1.2rem;
+    margin: 0 0 10px 0;
+  }
+
+  .feature p {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  footer {
+    padding: 28px 0 40px;
+    border-top: 1px solid var(--line);
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+  }
+
+  footer .wrap {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* Responsive */
+  @media (max-width: 780px) {
+    .hero { grid-template-columns: 1fr; padding-top: 32px; }
+    .hero h1 { font-size: 2rem; max-width: none; }
+    .features { grid-template-columns: 1fr; gap: 24px; }
+    .feature:not(:first-child) { border-left: none; border-top: 1px solid var(--line); padding-top: 24px; }
+  }
+
+  a:focus-visible, button:focus-visible {
+    outline: 2px solid var(--sage);
+    outline-offset: 2px;
+  }
+</style>
+</head>
+<body>
+
+  <nav class="wrap">
+    <div class="logo">Folio</div>
+    <div class="nav-actions">
+      <a href="#" class="btn btn-ghost" aria-disabled="true">Log in</a>
+      <a href="#" class="btn btn-solid" aria-disabled="true">Get started</a>
+    </div>
+  </nav>
+
+  <header class="hero wrap">
+    <div>
+      <h1>Smarter insights for smarter investing.</h1>
+      <p>Get a clearer view of your investments with intelligent portfolio analysis and actionable recommendations.</p>
+      <div class="hero-actions">
+        <a href="#" class="btn btn-solid" aria-disabled="true">Get started</a>
+        <a href="#" class="btn btn-ghost" aria-disabled="true">Log in</a>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="label">Portfolio value</div>
+      <div class="value">$24,180 <span>+6.2%</span></div>
+      <svg viewBox="0 0 320 110" width="100%" height="110" fill="none">
+        <path d="M0,90 L40,78 L80,84 L120,58 L160,64 L200,40 L240,46 L280,20 L320,26"
+              stroke="#DCD5C8" stroke-width="1" />
+        <path class="draw-path" d="M0,90 L40,78 L80,84 L120,58 L160,64 L200,40 L240,46 L280,20 L320,26"
+              stroke="#3F6B4E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </div>
+  </header>
+
+  <hr class="rule" />
+
+  <section class="features wrap">
+    <div class="feature">
+      <h3>Performance &amp; allocation</h3>
+      <p>See what's up, what's down, and how your money is split across holdings.</p>
+    </div>
+    <div class="feature">
+      <h3>Risk score</h3>
+      <p>A plain-language read on how exposed you are, no jargon required.</p>
+    </div>
+    <div class="feature">
+      <h3>News that matches your holdings</h3>
+      <p>Only the stories tied to what you actually own, not the whole market.</p>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <span>Folio, built for people who don't want to guess</span>
+      <span>Work in progress</span>
+    </div>
+  </footer>
+
+</body>
+</html>

@@ -1,0 +1,24 @@
+# ADR-001: Use JavaScript/Node across all tiers
+
+## Status
+Proposed
+
+## Context
+No implementation exists yet, and a language needs to be picked before any
+boilerplate work (like the landing page) can continue consistently. The
+repo's CI templates only cover Python and Java, but neither was a hard
+requirement.
+
+## Decision
+Build the project in JavaScript/Node.js across all four tiers (Presentation,
+Service, Domain, Data). This keeps one language, one dependency file, and
+one CI pipeline for the whole project instead of splitting the stack.
+
+## Consequences
+- Domain-layer math (volatility, diversification score) will be written in
+  plain JS rather than relying on a numerical library like NumPy.
+- CI had to be hand-written for Node since no JS template was provided in
+  the repo, unlike the existing Python/Java templates.
+- If a feature later needs heavier statistical or ML tooling, a separate
+  Python service may be added, but that is not planned as a starting
+  requirement.
