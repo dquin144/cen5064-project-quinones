@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { validateHolding, consolidateHoldings } = require('../public/js/domain.js');
+const { validateHolding, consolidateHoldings, summarizePortfolio } = require('../src/domain.js');
 
 const TODAY = '2026-09-28';
 const valid = { ticker: 'AAPL', shares: '10', purchasePrice: '150', purchaseDate: '2024-01-15' };
@@ -77,4 +77,28 @@ test('same-date purchases: the most recently saved one counts as latest', () => 
 test('keeps different tickers as separate rows and merges ticker case', () => {
   const rows = consolidateHoldings([lot('AAPL', 1, 100, '2024-01-15'), lot('MSFT', 2, 300, '2024-01-15'), lot('aapl', 3, 100, '2024-02-01')]);
   assert.deepStrictEqual(rows.map((r) => [r.ticker, r.shares]), [['AAPL', 4], ['MSFT', 2]]);
+});
+
+test('synced positions (no purchase date) sort after dated purchases', () => {
+  const [row] = consolidateHoldings([
+    { ticker: 'AAPL', shares: 3, purchasePrice: 120, purchaseDate: null, source: 'Robinhood' },
+    lot('AAPL', 1, 100, '2024-01-15'),
+    lot('AAPL', 2, 110, '2025-03-01'),
+  ]);
+  assert.deepStrictEqual(row.purchases.map((p) => p.purchaseDate), ['2025-03-01', '2024-01-15', null]);
+  assert.strictEqual(row.purchases[2].source, 'Robinhood');
+  assert.strictEqual(row.shares, 6);
+});
+
+test('summarizes an empty portfolio as zero', () => {
+  assert.deepStrictEqual(summarizePortfolio([]), { totalInvested: 0, holdingsCount: 0 });
+});
+
+test('summarizes total invested across tickers and merged rows', () => {
+  const rows = consolidateHoldings([
+    lot('AAPL', 10, 100, '2024-01-15'),
+    lot('AAPL', 10, 200, '2024-06-01'),
+    lot('MSFT', 2, 300, '2024-01-15'),
+  ]);
+  assert.deepStrictEqual(summarizePortfolio(rows), { totalInvested: 3600, holdingsCount: 2 });
 });

@@ -2,9 +2,13 @@
   "name": "ai-portfolio-analyzer",
   "version": "0.1.0",
   "description": "AI Portfolio Analyzer",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "test": "node --test"
+    "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test"
+  },
+  "engines": {
+    "node": ">=22.13"
   },
   "license": "MIT"
 }
