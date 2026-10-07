@@ -16,29 +16,39 @@ The proposed project is a potfolio analysis application that helps users better 
 
 ## How to run
 
-Clone the repo, then from the repo root:
-\`\`\`
-npm install
-npm test
-\`\`\`
+Requires **Node 22.13 or later** (Node 24 recommended; check with `node -v`).
+From the repo root after cloning:
 
-To view the landing page locally:
-- Open the repo in VS Code, install the **Live Server** extension if you
-  don't have it, right-click `public/index.html` in the file tree, and
-  choose **Open with Live Server**. It will open in your browser and
-  auto-refresh on save.
-- Alternatively, open `public/index.html` directly in a browser (double-click
-  the file), or run `npx serve public` and open the printed localhost URL.
+1. **Install dependencies:** `npm install`
+2. **Run the tests:** `npm test`
+3. **Start the app:** `npm start` (stop it with Ctrl+C)
+4. **Open the portfolio page:** http://localhost:3000/portfolio.html, or open
+   http://localhost:3000 and click "Get started" or "Log in" (login isn't
+   implemented yet, so both go straight to the portfolio).
 
-There is no backend server yet — this currently only runs the static
-landing page and the CI test suite. This section will be updated once
-the Service/Domain/Data tiers exist and a real dev server is added.
+Holdings are saved in a local SQLite database at `data/folio.db`, created on
+first run. Live Server no longer works for the portfolio page, because it needs
+the Node server.
 
-```
-[Exact commands to build and run your system from a clean clone.
-Update this every time the steps change — your partner and your
-instructor will follow it literally on conference days.]
-```
+### Optional: connect a brokerage (SnapTrade)
+
+Everything above works without this. To enable "Connect brokerage" you need
+your own free SnapTrade API key:
+
+1. Create a **Commercial** account (not Personal) at https://dashboard.snaptrade.com,
+   verify your email, and turn on two-factor authentication.
+2. On the **API Keys** page, create a **test** key. Copy the **Client ID** and
+   **Consumer Key** right away and keep the Consumer Key private.
+3. Copy `.env.example` to `.env` and paste the two values into
+   `SNAPTRADE_CLIENT_ID` and `SNAPTRADE_CONSUMER_KEY`. `.env` is gitignored —
+   never commit real keys.
+4. Restart `npm start`, click **Connect brokerage**, and sign in to your
+   brokerage on the page that opens. You'll be sent back to Folio and your
+   holdings sync automatically. **Sync accounts** refreshes them;
+   **Disconnect** revokes SnapTrade's access and removes synced holdings.
+
+Access is read-only. The free tier allows one connected user. Stocks, ETFs and
+mutual funds in USD are imported; options, crypto and cash are skipped for now.
 
 ## Architecture
 
@@ -160,6 +170,8 @@ Decisions live in [`docs/adr/`](docs/adr/). Start with ADR-001 in Session 4.
 | # | Decision | Status |
 |---|----------|--------|
 | [001](docs/adr/adr-001.md) | [What I am building and why] | [proposed] |
+| [002](docs/adr/adr-002.md) | Use SQLite via built-in `node:sqlite` for the Data tier | accepted |
+| [003](docs/adr/adr-003.md) | Use SnapTrade to connect brokerage accounts | accepted |
 
 ## Weekly log (optional but recommended)
 
