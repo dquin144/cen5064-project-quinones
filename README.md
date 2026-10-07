@@ -17,18 +17,18 @@ The proposed project is a potfolio analysis application that helps users better 
 ## How to run
 
 Requires **Node 22.13 or later** (Node 24 recommended; check with `node -v`).
+From the repo root after cloning:
 
-Clone the repo, then from the repo root:
-```
-npm install
-npm test
-npm start
-```
-Open http://localhost:3000. "Get started" or "Log in" goes to the portfolio
-dashboard (login isn't implemented yet). Holdings are saved in a local SQLite
-database at `data/folio.db`, which is created on first run.
+1. **Install dependencies:** `npm install`
+2. **Run the tests:** `npm test`
+3. **Start the app:** `npm start` (stop it with Ctrl+C)
+4. **Open the portfolio page:** http://localhost:3000/portfolio.html, or open
+   http://localhost:3000 and click "Get started" or "Log in" (login isn't
+   implemented yet, so both go straight to the portfolio).
 
-Live Server no longer works for the dashboard, because it needs the Node server.
+Holdings are saved in a local SQLite database at `data/folio.db`, created on
+first run. Live Server no longer works for the portfolio page, because it needs
+the Node server.
 
 ### Optional: connect a brokerage (SnapTrade)
 
