@@ -35,8 +35,16 @@ function getPortfolio() {
     purchasePrice: p.averagePrice,
     purchaseDate: null,
     source: p.accountName,
+    currentPrice: p.price,
   }));
-  const rows = consolidateHoldings([...data.loadHoldings(), ...synced]);
+  const buys = data.loadBrokerageBuys(APP_USER_ID).map((b) => ({
+    ticker: b.ticker,
+    shares: b.shares,
+    purchasePrice: b.price,
+    purchaseDate: b.date,
+    source: b.accountName,
+  }));
+  const rows = consolidateHoldings([...data.loadHoldings(), ...synced], buys);
   return {
     rows,
     summary: { ...summarizePortfolio(rows), accountsConnected: data.countBrokerageAccounts(APP_USER_ID) },
@@ -59,8 +67,18 @@ async function syncBrokerage() {
   if (!snaptrade.isConfigured()) throw new NotConfiguredError();
   const user = data.getBrokerageUser(APP_USER_ID);
   if (!user) throw new NotConnectedError();
-  const { accounts, positions } = await snaptrade.fetchAccountsAndPositions(user);
-  data.replaceBrokerageData(APP_USER_ID, accounts, positions);
+  const { accounts, positions, buys } = await snaptrade.fetchAccountsAndPositions(user);
+  data.replaceBrokerageData(APP_USER_ID, accounts, positions, buys);
+  return getPortfolio();
+}
+
+// Revokes SnapTrade's access to every connected brokerage and removes synced
+// holdings from Folio. Manual holdings are kept.
+async function disconnectBrokerage() {
+  if (!snaptrade.isConfigured()) throw new NotConfiguredError();
+  const user = data.getBrokerageUser(APP_USER_ID);
+  if (user) await snaptrade.disconnectAll(user);
+  data.replaceBrokerageData(APP_USER_ID, [], []);
   return getPortfolio();
 }
 
@@ -69,6 +87,7 @@ module.exports = {
   getPortfolio,
   startBrokerageConnection,
   syncBrokerage,
+  disconnectBrokerage,
   NotConfiguredError,
   NotConnectedError,
   BrokerageApiError: snaptrade.BrokerageApiError,

@@ -36,9 +36,32 @@ const SCHEMA = `
     account_id    TEXT NOT NULL REFERENCES brokerage_accounts(id) ON DELETE CASCADE,
     ticker        TEXT NOT NULL,
     shares        REAL NOT NULL,
-    average_price REAL NOT NULL
+    average_price REAL NOT NULL,
+    price         REAL
+  );
+
+  -- Past buy transactions, used only for the purchase history display.
+  CREATE TABLE IF NOT EXISTS brokerage_buys (
+    account_id TEXT NOT NULL REFERENCES brokerage_accounts(id) ON DELETE CASCADE,
+    ticker     TEXT NOT NULL,
+    shares     REAL NOT NULL,
+    price      REAL NOT NULL,
+    trade_date TEXT NOT NULL
   );
 `;
+
+// Columns added after a table was first created. CREATE TABLE IF NOT EXISTS
+// won't add them to an existing database, so add any that are missing.
+const ADDED_COLUMNS = [
+  { table: 'brokerage_positions', column: 'price', type: 'REAL' },
+];
+
+function migrate(db) {
+  for (const { table, column, type } of ADDED_COLUMNS) {
+    const exists = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+    if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
 
 let db = null;
 
@@ -49,6 +72,7 @@ function getDb() {
   db = new DatabaseSync(file);
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
 }
 
@@ -92,19 +116,23 @@ function saveBrokerageUser(appUserId, user) {
     .run(appUserId, user.userId, user.userSecret);
 }
 
-// Each sync is a full snapshot: drop the user's old accounts (positions cascade), insert the new ones.
-function replaceBrokerageData(appUserId, accounts, positions) {
+// Each sync is a full snapshot: drop the user's old accounts (positions and buys
+// cascade), insert the new ones.
+function replaceBrokerageData(appUserId, accounts, positions, buys = []) {
   const db = getDb();
   const insertAccount = db.prepare(
     'INSERT INTO brokerage_accounts (id, app_user_id, name, institution) VALUES (?, ?, ?, ?)');
   const insertPosition = db.prepare(
-    'INSERT INTO brokerage_positions (account_id, ticker, shares, average_price) VALUES (?, ?, ?, ?)');
+    'INSERT INTO brokerage_positions (account_id, ticker, shares, average_price, price) VALUES (?, ?, ?, ?, ?)');
+  const insertBuy = db.prepare(
+    'INSERT INTO brokerage_buys (account_id, ticker, shares, price, trade_date) VALUES (?, ?, ?, ?, ?)');
 
   db.exec('BEGIN');
   try {
     db.prepare('DELETE FROM brokerage_accounts WHERE app_user_id = ?').run(appUserId);
     for (const a of accounts) insertAccount.run(a.id, appUserId, a.name, a.institution ?? null);
-    for (const p of positions) insertPosition.run(p.accountId, p.ticker, p.shares, p.averagePrice);
+    for (const p of positions) insertPosition.run(p.accountId, p.ticker, p.shares, p.averagePrice, p.price ?? null);
+    for (const b of buys) insertBuy.run(b.accountId, b.ticker, b.shares, b.price, b.date);
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');
@@ -114,11 +142,26 @@ function replaceBrokerageData(appUserId, accounts, positions) {
 
 function loadBrokeragePositions(appUserId) {
   return getDb()
-    .prepare(`SELECT p.ticker, p.shares, p.average_price, a.name AS account_name
+    .prepare(`SELECT p.ticker, p.shares, p.average_price, p.price, a.name AS account_name
               FROM brokerage_positions p JOIN brokerage_accounts a ON a.id = p.account_id
               WHERE a.app_user_id = ? ORDER BY p.rowid`)
     .all(appUserId)
-    .map((r) => ({ ticker: r.ticker, shares: r.shares, averagePrice: r.average_price, accountName: r.account_name }));
+    .map((r) => ({
+      ticker: r.ticker,
+      shares: r.shares,
+      averagePrice: r.average_price,
+      price: r.price,
+      accountName: r.account_name,
+    }));
+}
+
+function loadBrokerageBuys(appUserId) {
+  return getDb()
+    .prepare(`SELECT b.ticker, b.shares, b.price, b.trade_date, a.name AS account_name
+              FROM brokerage_buys b JOIN brokerage_accounts a ON a.id = b.account_id
+              WHERE a.app_user_id = ? ORDER BY b.rowid`)
+    .all(appUserId)
+    .map((r) => ({ ticker: r.ticker, shares: r.shares, price: r.price, date: r.trade_date, accountName: r.account_name }));
 }
 
 function countBrokerageAccounts(appUserId) {
@@ -134,6 +177,7 @@ module.exports = {
   saveBrokerageUser,
   replaceBrokerageData,
   loadBrokeragePositions,
+  loadBrokerageBuys,
   countBrokerageAccounts,
   closeDb,
 };

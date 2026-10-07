@@ -7,8 +7,8 @@ const snaptrade = require('../src/snaptrade.js');
 const service = require('../src/service.js');
 
 // Stands in for the SnapTrade SDK; SDK calls resolve to { data }.
-function fakeClient({ accounts = [], positionsByAccount = {} } = {}) {
-  const calls = { register: 0, login: [] };
+function fakeClient({ accounts = [], positionsByAccount = {}, buysByAccount = {} } = {}) {
+  const calls = { register: 0, login: [], deleted: [] };
   const ok = (data) => Promise.resolve({ data });
   return {
     calls,
@@ -16,9 +16,17 @@ function fakeClient({ accounts = [], positionsByAccount = {} } = {}) {
       registerSnapTradeUser: ({ userId }) => { calls.register++; return ok({ userId, userSecret: 'secret-1' }); },
       loginSnapTradeUser: (params) => { calls.login.push(params); return ok({ redirectURI: 'https://portal.example/abc' }); },
     },
+    connections: {
+      listBrokerageAuthorizations: () => ok([{ id: 'conn-1' }, { id: 'conn-2' }]),
+      deleteConnection: ({ connectionId }) => { calls.deleted.push(connectionId); return ok({}); },
+    },
     accountInformation: {
       listUserAccounts: () => ok(accounts),
       getAllAccountPositions: ({ accountId }) => ok({ results: positionsByAccount[accountId] || [] }),
+      getAccountActivities: ({ accountId }) => {
+        const data = buysByAccount[accountId] || [];
+        return ok({ data, pagination: { offset: 0, limit: 1000, total: data.length } });
+      },
     },
   };
 }
@@ -107,4 +115,61 @@ test('SnapTrade failures surface as BrokerageApiError with the reason', async ()
   await service.startBrokerageConnection('http://x');
   await assert.rejects(service.syncBrokerage(), (err) =>
     err instanceof service.BrokerageApiError && /Invalid signature/.test(err.message));
+});
+
+test('disconnect deletes every SnapTrade connection and clears synced holdings only', async () => {
+  const fake = fakeClient({
+    accounts: [{ id: 'acc-1', name: 'E*TRADE Individual', institution_name: 'E*TRADE' }],
+    positionsByAccount: { 'acc-1': [stock('VTI', 4, 200)] },
+  });
+  snaptrade.setClientForTests(fake);
+  service.addHolding({ ticker: 'AAPL', shares: '1', purchasePrice: '100', purchaseDate: '2024-01-15' });
+  await service.startBrokerageConnection('http://x');
+  await service.syncBrokerage();
+
+  const { rows, summary } = await service.disconnectBrokerage();
+  assert.deepStrictEqual(fake.calls.deleted, ['conn-1', 'conn-2']);
+  assert.deepStrictEqual(rows.map((r) => r.ticker), ['AAPL']);
+  assert.strictEqual(summary.accountsConnected, 0);
+});
+
+test('synced market price gives the row a value', async () => {
+  snaptrade.setClientForTests(fakeClient({
+    accounts: [{ id: 'acc-1', name: 'E*TRADE Individual', institution_name: 'E*TRADE' }],
+    positionsByAccount: { 'acc-1': [{ ...stock('VTI', 4, 200), price: '250' }] },
+  }));
+  await service.startBrokerageConnection('http://x');
+  const { rows } = await service.syncBrokerage();
+  assert.strictEqual(rows[0].value, 1000);
+});
+
+const buy = (symbol, units, price, date) =>
+  ({ type: 'BUY', symbol: { symbol, raw_symbol: symbol }, units, price, trade_date: date + 'T15:00:00Z' });
+
+test('sync stores buy history; latest buy shows first, cost still uses the average', async () => {
+  snaptrade.setClientForTests(fakeClient({
+    accounts: [{ id: 'acc-1', name: 'E*TRADE Individual', institution_name: 'E*TRADE' }],
+    positionsByAccount: { 'acc-1': [{ ...stock('VOO', 11, 553.57), price: '600' }] },
+    buysByAccount: { 'acc-1': [buy('VOO', 5, 520, '2025-06-01'), buy('VOO', 6, 580, '2026-02-10'), buy('CABA', 3, 4, '2025-07-01')] },
+  }));
+  await service.startBrokerageConnection('http://x');
+  const { rows } = await service.syncBrokerage();
+
+  assert.deepStrictEqual(rows.map((r) => r.ticker), ['VOO'], 'buys for stocks no longer held are ignored');
+  const [voo] = rows;
+  assert.deepStrictEqual(voo.purchases.map((p) => [p.purchaseDate, p.purchasePrice]), [['2026-02-10', 580], ['2025-06-01', 520]]);
+  assert.strictEqual(voo.costBasis, 11 * 553.57);
+  assert.strictEqual(voo.value, 6600);
+});
+
+test('a failing purchase-history request does not break the sync', async () => {
+  const fake = fakeClient({
+    accounts: [{ id: 'acc-1', name: 'E*TRADE Individual', institution_name: 'E*TRADE' }],
+    positionsByAccount: { 'acc-1': [stock('VTI', 4, 200)] },
+  });
+  fake.accountInformation.getAccountActivities = () => Promise.reject(new Error('not supported'));
+  snaptrade.setClientForTests(fake);
+  await service.startBrokerageConnection('http://x');
+  const { rows } = await service.syncBrokerage();
+  assert.deepStrictEqual(rows.map((r) => [r.ticker, r.purchases[0].purchaseDate]), [['VTI', null]]);
 });

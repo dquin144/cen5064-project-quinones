@@ -13,7 +13,7 @@ const sample = {
 };
 
 test('converts a SnapTrade stock position to Folio shape', () => {
-  assert.deepStrictEqual(toPosition(sample, 'acc-1'), { accountId: 'acc-1', ticker: 'AAPL', shares: 12.5, averagePrice: 150.25 });
+  assert.deepStrictEqual(toPosition(sample, 'acc-1'), { accountId: 'acc-1', ticker: 'AAPL', shares: 12.5, averagePrice: 150.25, price: 190.1 });
 });
 
 test('uses the raw symbol without an exchange suffix', () => {
@@ -36,4 +36,37 @@ test('skips positions Folio cannot show yet', () => {
   skip({ units: '-5' });
   skip({ currency: 'CAD' });
   skip({ instrument: undefined });
+});
+
+test('price is null when SnapTrade has no market price', () => {
+  assert.strictEqual(toPosition({ ...sample, price: null }, 'a').price, null);
+});
+
+const { toBuy } = require('../src/snaptrade.js');
+const activity = {
+  type: 'BUY',
+  symbol: { symbol: 'VOO', raw_symbol: 'VOO' },
+  units: 5,
+  price: 520.25,
+  trade_date: '2025-06-01T16:30:00Z',
+  currency: { code: 'USD' },
+};
+
+test('converts a SnapTrade BUY activity to a dated purchase', () => {
+  assert.deepStrictEqual(toBuy(activity, 'acc-1'), { accountId: 'acc-1', ticker: 'VOO', shares: 5, price: 520.25, date: '2025-06-01' });
+});
+
+test('dividend reinvestments count as purchases', () => {
+  assert.ok(toBuy({ ...activity, type: 'REI' }, 'a'));
+});
+
+test('skips activities that are not usable purchases', () => {
+  const skip = (changes) => assert.strictEqual(toBuy({ ...activity, ...changes }, 'a'), null, JSON.stringify(changes));
+  skip({ type: 'SELL' });
+  skip({ type: 'DIVIDEND' });
+  skip({ symbol: null });
+  skip({ units: 0 });
+  skip({ price: 0 });
+  skip({ trade_date: null, settlement_date: undefined });
+  skip({ currency: { code: 'CAD' } });
 });

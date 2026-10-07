@@ -83,6 +83,9 @@ async function handle(req, res) {
   if (route === 'POST /api/brokerage/sync') {
     return sendJson(res, 200, await service.syncBrokerage());
   }
+  if (route === 'POST /api/brokerage/disconnect') {
+    return sendJson(res, 200, await service.disconnectBrokerage());
+  }
   if (req.method === 'GET' && !pathname.startsWith('/api/')) {
     return serveStatic(pathname, res);
   }

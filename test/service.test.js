@@ -12,7 +12,7 @@ beforeEach(() => closeDb());
 test('starts with an empty portfolio', () => {
   const { rows, summary } = service.getPortfolio();
   assert.deepStrictEqual(rows, []);
-  assert.deepStrictEqual(summary, { totalInvested: 0, holdingsCount: 0, accountsConnected: 0 });
+  assert.deepStrictEqual(summary, { ...{ totalInvested: 0, holdingsCount: 0, totalValue: 0, gainLoss: 0, gainLossPercent: null, unpricedCount: 0 }, accountsConnected: 0 });
 });
 
 test('rejects an invalid holding and saves nothing', () => {
@@ -42,4 +42,30 @@ test('same-date purchases: the later save counts as the latest', () => {
   service.addHolding({ ...valid, purchasePrice: '100' });
   service.addHolding({ ...valid, purchasePrice: '110' });
   assert.strictEqual(service.getPortfolio().rows[0].purchases[0].purchasePrice, 110);
+});
+
+test('adds the price column to a database created before it existed', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { DatabaseSync } = require('node:sqlite');
+  const data = require('../src/data.js');
+
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'folio-')), 'old.db');
+  const old = new DatabaseSync(file);
+  old.exec(`CREATE TABLE brokerage_accounts (id TEXT PRIMARY KEY, app_user_id TEXT NOT NULL, name TEXT NOT NULL, institution TEXT, synced_at TEXT);
+            CREATE TABLE brokerage_positions (account_id TEXT NOT NULL, ticker TEXT NOT NULL, shares REAL NOT NULL, average_price REAL NOT NULL);
+            INSERT INTO brokerage_accounts VALUES ('a1', 'local', 'Old Account', NULL, NULL);
+            INSERT INTO brokerage_positions VALUES ('a1', 'VTI', 3, 200);`);
+  old.close();
+
+  closeDb();
+  process.env.DB_FILE = file;
+  try {
+    assert.deepStrictEqual(data.loadBrokeragePositions('local'),
+      [{ ticker: 'VTI', shares: 3, averagePrice: 200, price: null, accountName: 'Old Account' }]);
+  } finally {
+    closeDb();
+    process.env.DB_FILE = ':memory:';
+  }
 });

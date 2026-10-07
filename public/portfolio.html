@@ -67,7 +67,7 @@
   /* Summary tiles */
   .summary {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 16px;
     margin-bottom: 24px;
   }
@@ -82,6 +82,19 @@
     font-variant-numeric: tabular-nums;
   }
   .summary .card { margin-bottom: 0; }
+  .tile .value.gain { color: var(--sage-dark); }
+  .tile .value.loss { color: var(--error); }
+  .tile .value .pct {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-left: 6px;
+  }
+  .tile-note {
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+    margin-top: 4px;
+  }
 
   /* Holdings header */
   .section-head {
@@ -167,7 +180,13 @@
   }
   th { font-size: 0.82rem; font-weight: 500; color: var(--ink-soft); }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  td.muted { color: var(--ink-soft); }
+  td.muted, .muted { color: var(--ink-soft); }
+  .sub {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+    margin-top: 2px;
+  }
   td select {
     font: inherit;
     font-size: 0.9rem;
@@ -227,6 +246,9 @@
     min-height: 1em;
   }
 
+  @media (max-width: 960px) {
+    .summary { grid-template-columns: 1fr 1fr; }
+  }
   @media (max-width: 780px) {
     .summary { grid-template-columns: 1fr; }
     .fields { grid-template-columns: 1fr; }
@@ -244,8 +266,14 @@
 
     <section class="summary" aria-label="Portfolio summary">
       <div class="card tile">
-        <div class="label">Total invested</div>
-        <div class="value" id="total-invested">$0.00</div>
+        <div class="label">Total value</div>
+        <div class="value" id="total-value">—</div>
+        <div class="tile-note" id="total-value-note" hidden></div>
+      </div>
+      <div class="card tile">
+        <div class="label">Total gain/loss</div>
+        <div class="value" id="gain-loss">—</div>
+        <div class="tile-note" id="gain-loss-note" hidden></div>
       </div>
       <div class="card tile">
         <div class="label">Holdings</div>
@@ -264,6 +292,7 @@
         <h2>Holdings</h2>
         <div class="actions" id="head-actions" hidden>
           <button type="button" class="link-btn" id="sync-btn" hidden>Sync accounts</button>
+          <button type="button" class="link-btn" id="disconnect-btn" hidden>Disconnect</button>
           <button type="button" class="btn btn-ghost" data-open="connect-dialog">Connect brokerage</button>
           <button type="button" class="btn btn-solid" data-open="add-dialog">Add holding</button>
         </div>
@@ -283,10 +312,10 @@
           <thead>
             <tr>
               <th>Ticker</th>
+              <th class="num">Value</th>
+              <th class="num">Price</th>
               <th class="num">Shares</th>
-              <th class="num">Purchase price</th>
-              <th>Purchase date</th>
-              <th class="num">Cost basis</th>
+              <th>Purchase price</th>
             </tr>
           </thead>
           <tbody id="holdings-body"></tbody>
@@ -372,29 +401,78 @@
     tr.appendChild(td);
   }
 
-  // Synced brokerage positions have no purchase date; show where they came from instead.
-  const dateLabel = (p) => p.purchaseDate || `${p.source || 'Brokerage'} · avg cost`;
+  // Each purchase has a date and, if it came from a brokerage, the account name.
+  // A synced position with no buy history has no date, only an average cost.
+  const priceLabel = (p) => p.purchaseDate
+    ? money.format(p.purchasePrice)
+    : `${money.format(p.purchasePrice)} avg`;
+  const whenLabel = (p) => [p.purchaseDate, p.source].filter(Boolean).join(' · ') || 'Brokerage';
 
-  // Latest purchase first; the price and date dropdowns stay on the same purchase.
-  function purchaseSelects(row) {
-    const price = document.createElement('select');
-    const date = document.createElement('select');
-    price.setAttribute('aria-label', `Purchase price for ${row.ticker}`);
-    date.setAttribute('aria-label', `Purchase date for ${row.ticker}`);
-    row.purchases.forEach((p, i) => {
-      price.add(new Option(`${money.format(p.purchasePrice)} × ${qty(p.shares)}`, i));
-      date.add(new Option(dateLabel(p), i));
-    });
-    price.addEventListener('change', () => { date.value = price.value; });
-    date.addEventListener('change', () => { price.value = date.value; });
-    return [price, date];
+  // Single purchase: price with its date (or account) underneath.
+  function purchaseText(p) {
+    const span = document.createElement('span');
+    span.textContent = priceLabel(p);
+    const sub = document.createElement('span');
+    sub.className = 'sub';
+    sub.textContent = whenLabel(p);
+    span.appendChild(sub);
+    return span;
+  }
+
+  // Several purchases: a dropdown showing the most recent, with the full history inside.
+  function purchaseHistory(row) {
+    const select = document.createElement('select');
+    select.setAttribute('aria-label', `Purchase history for ${row.ticker}`);
+    for (const p of row.purchases) {
+      select.add(new Option(`${priceLabel(p)} × ${qty(p.shares)} · ${whenLabel(p)}`));
+    }
+    return select;
+  }
+
+  // "+$1,234.56 (+12.3%)" in green, or "−$50.00 (−2.1%)" in red. The sign carries
+  // the meaning too, so it doesn't rely on color alone.
+  function renderGainLoss(summary) {
+    const el = $('gain-loss');
+    el.classList.remove('gain', 'loss');
+    el.replaceChildren();
+    if (summary.gainLossPercent === null) {
+      el.textContent = '—';
+    } else {
+      const g = summary.gainLoss;
+      const sign = g > 0 ? '+' : g < 0 ? '−' : '';
+      el.textContent = sign + money.format(Math.abs(g));
+      const pct = document.createElement('span');
+      pct.className = 'pct';
+      pct.textContent = `(${sign}${Math.abs(summary.gainLossPercent).toFixed(2)}%)`;
+      el.appendChild(pct);
+      if (g > 0) el.classList.add('gain');
+      if (g < 0) el.classList.add('loss');
+    }
+    const n = summary.unpricedCount;
+    for (const id of ['total-value-note', 'gain-loss-note']) {
+      $(id).textContent = n ? `Excludes ${n} holding${n === 1 ? '' : 's'} without a market price` : '';
+      $(id).hidden = !n;
+    }
+  }
+
+  const NO_PRICE_TITLE = 'No market price yet. Prices come from connected brokerages for now.';
+
+  function moneyCell(tr, amount) {
+    if (amount === null) {
+      cell(tr, '—', 'num muted');
+      tr.lastChild.title = NO_PRICE_TITLE;
+    } else {
+      cell(tr, money.format(amount), 'num');
+    }
   }
 
   function render(portfolio) {
     const { rows, summary } = portfolio;
     brokerageConfigured = Boolean(portfolio.brokerageConfigured);
 
-    $('total-invested').textContent = money.format(summary.totalInvested);
+    const anyPriced = summary.unpricedCount < summary.holdingsCount;
+    $('total-value').textContent = anyPriced ? money.format(summary.totalValue) : '—';
+    renderGainLoss(summary);
     $('holdings-count').textContent = summary.holdingsCount;
     $('accounts-count').textContent = summary.accountsConnected;
 
@@ -402,18 +480,11 @@
     tbody.replaceChildren();
     for (const row of rows) {
       const tr = document.createElement('tr');
-      const latest = row.purchases[0];
       cell(tr, row.ticker);
+      moneyCell(tr, row.value);
+      moneyCell(tr, row.currentPrice);
       cell(tr, qty(row.shares), 'num');
-      if (row.purchases.length === 1) {
-        cell(tr, money.format(latest.purchasePrice), 'num');
-        cell(tr, dateLabel(latest), latest.purchaseDate ? '' : 'muted');
-      } else {
-        const [price, date] = purchaseSelects(row);
-        cell(tr, price, 'num');
-        cell(tr, date);
-      }
-      cell(tr, money.format(row.costBasis), 'num');
+      cell(tr, row.purchases.length === 1 ? purchaseText(row.purchases[0]) : purchaseHistory(row));
       tbody.appendChild(tr);
     }
 
@@ -422,6 +493,7 @@
     $('holdings-table').hidden = empty;
     $('head-actions').hidden = empty;
     $('sync-btn').hidden = summary.accountsConnected === 0;
+    $('disconnect-btn').hidden = summary.accountsConnected === 0;
   }
 
   async function loadPortfolio() {
@@ -527,6 +599,23 @@
   }
 
   $('sync-btn').addEventListener('click', syncAccounts);
+
+  $('disconnect-btn').addEventListener('click', async () => {
+    const ok = confirm('Disconnect your brokerage accounts? This revokes SnapTrade\'s access and removes synced holdings from Folio. Manual holdings stay.');
+    if (!ok) return;
+    setStatus('Disconnecting…');
+    $('disconnect-btn').disabled = true;
+    try {
+      const { status, data } = await api('POST', '/api/brokerage/disconnect');
+      if (status !== 200) throw new Error(data.error || "Couldn't disconnect.");
+      render(data);
+      setStatus('Brokerage disconnected. SnapTrade no longer has access to your accounts.');
+    } catch (err) {
+      setStatus(err.message || "Couldn't disconnect.", true);
+    } finally {
+      $('disconnect-btn').disabled = false;
+    }
+  });
 
   // ---- Start ----
 

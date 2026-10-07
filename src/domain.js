@@ -49,30 +49,61 @@ function byDateDesc(a, b) {
   return b.purchaseDate.localeCompare(a.purchaseDate);
 }
 
-// Groups purchases into one row per ticker. Each row's purchases are newest
-// first (same date: most recently saved first), so purchases[0] is the latest.
-function consolidateHoldings(holdings) {
+// Groups holdings into one row per ticker.
+//
+// holdings: what the user owns — manual purchases ({ ticker, shares, purchasePrice,
+//   purchaseDate }) and synced brokerage positions (purchaseDate null, purchasePrice =
+//   the brokerage's average cost, optional currentPrice and source). Shares, cost and
+//   value come only from these.
+// buys: past brokerage buy transactions ({ ticker, shares, purchasePrice, purchaseDate,
+//   source }). They only feed the purchase history shown to the user. A synced position
+//   with no recorded buys shows its average cost in the history instead.
+//
+// Each row's purchases are newest first (same date: most recently saved first, undated
+// last), so purchases[0] is the latest purchase.
+function consolidateHoldings(holdings, buys = []) {
   const byTicker = new Map();
-  for (const h of holdings) {
-    const ticker = h.ticker.toUpperCase();
-    if (!byTicker.has(ticker)) byTicker.set(ticker, []);
-    byTicker.get(ticker).push(h);
+  const group = (ticker) => {
+    const key = ticker.toUpperCase();
+    if (!byTicker.has(key)) byTicker.set(key, { holdings: [], buys: [] });
+    return byTicker.get(key);
+  };
+  for (const h of holdings) group(h.ticker).holdings.push(h);
+  for (const b of buys) {
+    if (byTicker.has(b.ticker.toUpperCase())) group(b.ticker).buys.push(b);
   }
-  return [...byTicker].map(([ticker, lots]) => {
-    const purchases = lots.slice().reverse().sort(byDateDesc);
+
+  return [...byTicker].map(([ticker, g]) => {
+    const history = g.buys.length > 0
+      ? [...g.holdings.filter((h) => h.purchaseDate !== null), ...g.buys]
+      : g.holdings;
+    const purchases = history.slice().reverse().sort(byDateDesc);
+    const shares = g.holdings.reduce((sum, h) => sum + h.shares, 0);
+    const currentPrice = g.holdings.find((h) => h.currentPrice > 0)?.currentPrice ?? null;
     return {
       ticker,
-      shares: purchases.reduce((sum, p) => sum + p.shares, 0),
-      costBasis: purchases.reduce((sum, p) => sum + p.shares * p.purchasePrice, 0),
+      shares,
+      costBasis: g.holdings.reduce((sum, h) => sum + h.shares * h.purchasePrice, 0),
+      currentPrice,
+      value: currentPrice === null ? null : shares * currentPrice,
       purchases,
     };
   });
 }
 
+// Gain/loss only counts rows with a known market price; unpricedCount says how many were left out.
 function summarizePortfolio(rows) {
+  const priced = rows.filter((r) => r.value !== null && r.value !== undefined);
+  const pricedCost = priced.reduce((sum, r) => sum + r.costBasis, 0);
+  const totalValue = priced.reduce((sum, r) => sum + r.value, 0);
+  const gainLoss = totalValue - pricedCost;
   return {
     totalInvested: rows.reduce((sum, r) => sum + r.costBasis, 0),
     holdingsCount: rows.length,
+    totalValue,
+    gainLoss,
+    gainLossPercent: pricedCost > 0 ? (gainLoss / pricedCost) * 100 : null,
+    unpricedCount: rows.length - priced.length,
   };
 }
 
