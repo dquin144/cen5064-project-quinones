@@ -32,19 +32,23 @@ Live Server no longer works for the dashboard, because it needs the Node server.
 
 ### Optional: connect a brokerage (SnapTrade)
 
-Everything above works without this. To enable "Connect brokerage":
+Everything above works without this. To enable "Connect brokerage" you need
+your own free SnapTrade API key:
 
-1. Create a **Commercial** account at https://dashboard.snaptrade.com, verify
-   your email, turn on two-factor authentication, and create a **test** API key.
-2. Copy `.env.example` to `.env` (if `.env` doesn't exist yet) and fill in
+1. Create a **Commercial** account (not Personal) at https://dashboard.snaptrade.com,
+   verify your email, and turn on two-factor authentication.
+2. On the **API Keys** page, create a **test** key. Copy the **Client ID** and
+   **Consumer Key** right away and keep the Consumer Key private.
+3. Copy `.env.example` to `.env` and paste the two values into
    `SNAPTRADE_CLIENT_ID` and `SNAPTRADE_CONSUMER_KEY`. `.env` is gitignored —
    never commit real keys.
-3. Restart `npm start`, click **Connect brokerage**, and sign in to your
-   brokerage on SnapTrade's page. You'll be sent back to Folio and your
-   holdings sync automatically. Use **Sync accounts** to refresh later.
+4. Restart `npm start`, click **Connect brokerage**, and sign in to your
+   brokerage on the page that opens. You'll be sent back to Folio and your
+   holdings sync automatically. **Sync accounts** refreshes them;
+   **Disconnect** revokes SnapTrade's access and removes synced holdings.
 
-Brokerage access is read-only. Stocks, ETFs and mutual funds in USD are
-imported; options, crypto and cash are skipped for now.
+Access is read-only. The free tier allows one connected user. Stocks, ETFs and
+mutual funds in USD are imported; options, crypto and cash are skipped for now.
 
 ## Architecture
 
