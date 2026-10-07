@@ -7,6 +7,7 @@ const path = require('node:path');
 const service = require('./src/service');
 
 const PORT = Number(process.env.PORT) || 3000;
+const APP_URL = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MAX_BODY_BYTES = 10 * 1024;
 const CONTENT_TYPES = {
@@ -75,6 +76,13 @@ async function handle(req, res) {
     if (Object.keys(errors).length > 0) return sendJson(res, 400, { errors });
     return sendJson(res, 201, service.getPortfolio());
   }
+  if (route === 'POST /api/brokerage/connect') {
+    const url = await service.startBrokerageConnection(`${APP_URL}/portfolio.html?brokerage=connected`);
+    return sendJson(res, 200, { url });
+  }
+  if (route === 'POST /api/brokerage/sync') {
+    return sendJson(res, 200, await service.syncBrokerage());
+  }
   if (req.method === 'GET' && !pathname.startsWith('/api/')) {
     return serveStatic(pathname, res);
   }
@@ -84,6 +92,12 @@ async function handle(req, res) {
 const server = http.createServer((req, res) => {
   handle(req, res).catch((err) => {
     if (err instanceof BadRequest) return sendJson(res, err.status, { error: err.message });
+    if (err instanceof service.NotConfiguredError) return sendJson(res, 503, { error: err.message });
+    if (err instanceof service.NotConnectedError) return sendJson(res, 409, { error: err.message });
+    if (err instanceof service.BrokerageApiError) {
+      console.error(err.message);
+      return sendJson(res, 502, { error: err.message });
+    }
     console.error(err);
     sendJson(res, 500, { error: 'Something went wrong on the server.' });
   });

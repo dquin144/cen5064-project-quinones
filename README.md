@@ -30,6 +30,22 @@ database at `data/folio.db`, which is created on first run.
 
 Live Server no longer works for the dashboard, because it needs the Node server.
 
+### Optional: connect a brokerage (SnapTrade)
+
+Everything above works without this. To enable "Connect brokerage":
+
+1. Create a **Commercial** account at https://dashboard.snaptrade.com, verify
+   your email, turn on two-factor authentication, and create a **test** API key.
+2. Copy `.env.example` to `.env` (if `.env` doesn't exist yet) and fill in
+   `SNAPTRADE_CLIENT_ID` and `SNAPTRADE_CONSUMER_KEY`. `.env` is gitignored —
+   never commit real keys.
+3. Restart `npm start`, click **Connect brokerage**, and sign in to your
+   brokerage on SnapTrade's page. You'll be sent back to Folio and your
+   holdings sync automatically. Use **Sync accounts** to refresh later.
+
+Brokerage access is read-only. Stocks, ETFs and mutual funds in USD are
+imported; options, crypto and cash are skipped for now.
+
 ## Architecture
 
 ### Tier breakdown (Session 2 studio)
@@ -151,6 +167,7 @@ Decisions live in [`docs/adr/`](docs/adr/). Start with ADR-001 in Session 4.
 |---|----------|--------|
 | [001](docs/adr/adr-001.md) | [What I am building and why] | [proposed] |
 | [002](docs/adr/adr-002.md) | Use SQLite via built-in `node:sqlite` for the Data tier | accepted |
+| [003](docs/adr/adr-003.md) | Use SnapTrade to connect brokerage accounts | accepted |
 
 ## Weekly log (optional but recommended)
 
