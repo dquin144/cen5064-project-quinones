@@ -298,8 +298,7 @@ Decisions live in [`docs/adr/`](docs/adr/).
 - **Week 6 (Sep 28):** First working slice: manual stock entry with Domain validation
 - **Week 7 (Oct 5):** With the stack, CI and first slice in place,
   features could be built on top of them, using AI-assisted development
-  with a critique on each PR. [Researched brokerage APIs before choosing SnapTrade
-  (ADR-003).] Built: Node server and SQLite storage (ADR-002), brokerage-style
+  with a critique on each PR. Built: Node server and SQLite storage (ADR-002), brokerage-style
   dashboard, brokerage connection through SnapTrade, portfolio value and gain/loss,
   edit/remove holdings with sync-conflict handling (ADR-004), and README/ADR updates
   for the midterm.
