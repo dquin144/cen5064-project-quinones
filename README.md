@@ -24,20 +24,10 @@ their portfolio without building spreadsheets.
 | UC3 | **See how the portfolio is doing:** total value, gain/loss, allocation, diversification and concentration scores | 🟡 Value and gain/loss working; allocation and scores planned |
 | UC4 | **Get news and recommendations for my holdings:** rule-based insights and news matched to what the user owns | ⏳ Planned |
 
-**In scope:** a single-user web app run locally; US stocks, ETFs and mutual
-funds priced in USD; read-only brokerage access; rule-based analysis computed
-from the user's own data.
-
-**Out of scope:** placing trades or moving money, options and crypto, tax
-reporting, multi-currency portfolios, and personalized financial advice
-(insights are informational only).
-
-**Scope change, acknowledged:** brokerage import (UC2) was only a
-"potentially" in the original proposal. It was pulled into the first half
-because it is the most useful way to fill a portfolio, and it is isolated in
-one Data-tier file ([ADR-003](docs/adr/adr-003.md)). To keep the semester
-achievable, UC4's recommendations start as transparent rules (for example,
-"one holding is over 25% of your portfolio") rather than machine learning.
+**Scope:** Folio runs locally for a single user, covers US stocks and ETFs, and
+only reads brokerage data (no trading). Connecting a brokerage was only a
+"maybe" in the original proposal; it was added early because it is the easiest
+way to fill a portfolio.
 
 ## How to run
 
@@ -118,7 +108,7 @@ flowchart LR
     class market planned
 ```
 
-*Dashed boxes and arrows = planned for the second half (not built yet).*
+*Dashed boxes and lines = planned (not built yet).*
 
 ### C4 — Container
 
@@ -150,7 +140,7 @@ flowchart LR
     class market planned
 ```
 
-*Dashed boxes and arrows = planned for the second half (not built yet). Inside a box, anything below the line labeled PLANNED is not built yet.*
+*Dashed boxes and lines = planned (not built yet).*
 
 ### UML — Class diagram
 
@@ -280,17 +270,11 @@ A rough plan; the order and scope may shift as the project develops.
 | 13–14 | Recommendations/insights, login, buffer for anything that slipped | UC4 |
 | 15–16 | Polish, final docs, final deliverable | — |
 
-**Risks and mitigations**
+**Risks**
 
-| Risk | Mitigation |
-|------|------------|
-| The grader's machine has Node older than 22.13, so `node:sqlite` is missing and the app won't start | Requirement at the top of "How to run" with the exact error; `engines` field in `package.json`; CI runs on Node 24 |
-| Market data API limits or outages (Finnhub free tier: 60 calls/min) | Cache quotes for a few minutes; fall back to the last brokerage price, labeled with its date |
-| SnapTrade free tier: one connected user, data up to a day old, API changes | All SnapTrade code in one file; tests use a fake client; manual entry works with no keys |
-| `node:sqlite` is still experimental and could change | All SQL lives in `src/data.js`, so moving to `better-sqlite3` or PostgreSQL touches one file ([ADR-002](docs/adr/adr-002.md)) |
-| Scope creep from the "AI" features (UC4) | Core metrics come first; recommendations start rule-based; news is cut if behind |
-| Stored secrets: the SnapTrade user secret is plain text in the local database | Fine for local development only; encrypted alongside login, before anything is deployed |
-| Partner review delays block dependent PRs | Small PRs, stacked branches, and merge commits (not squash) so stacked PRs merge cleanly |
+- **Free-tier API limits** (market data, SnapTrade): cache prices and fall back to the last brokerage price.
+- **Older Node versions** can't run the app: the required version is stated above, and CI runs on Node 24.
+- **Running out of time** for news and recommendations: core metrics come first; news is dropped if behind.
 
 ## Architecture Decision Records
 
@@ -302,15 +286,3 @@ Decisions live in [`docs/adr/`](docs/adr/).
 | [002](docs/adr/adr-002.md) | Use SQLite via built-in `node:sqlite` for the Data tier | accepted |
 | [003](docs/adr/adr-003.md) | Use SnapTrade to connect brokerage accounts | accepted |
 | [004](docs/adr/adr-004.md) | Keep user edits to synced holdings separate; let the user decide on sync | accepted |
-
-## Weekly log
-
-Taken from the commit history (weeks run Monday to Sunday, starting Aug 24).
-
-- **Week 1 (Aug 24):** Initial commit; project proposal added to the README and its bullet points fixed.
-- **Week 2 (Aug 31):** System tier table filled in on the README.
-- **Week 3 (Sep 7):** No commits.
-- **Week 4 (Sep 14):** C4 and class diagrams ("L2 studio: C4 + class diagram").
-- **Week 5 (Sep 21):** `package.json`, `package-lock.json`, CI workflow (`ci.yml`), smoke test and ADR-001 created; README run explanation; static landing page.
-- **Week 6 (Sep 28):** Landing page merged (PR #5); manual stock entry with portfolio list (issue #1).
-- **Week 7 (Oct 5):** Manual stock entry merged (PR #6); Node server, SQLite storage and brokerage-style dashboard; brokerage connection through SnapTrade; portfolio value, gain/loss and purchase history; README setup and run steps; edit and remove holdings, in-app confirmation dialog, editing synced holdings with a choice on sync; README and ADRs updated for the midterm. (Everything after the PR #6 merge is on branches not yet merged to `main`.)
