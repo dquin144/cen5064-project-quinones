@@ -112,13 +112,13 @@ flowchart LR
     user([Individual Investor]) -->|enters holdings, views value & gain/loss| system[Folio]
     system -->|reads accounts & positions| snaptrade[[SnapTrade API]]
     snaptrade -->|read-only access| brokerages[[Brokerages<br/>E*TRADE, Robinhood, Schwab, …]]
-    system -.->|planned: prices & news| market[[Market Data & News API<br/>planned]]
+    system -.->|planned: prices & news| market[[Market Data & News API<br/>PLANNED]]
 
     classDef planned stroke-dasharray: 5 5
     class market planned
 ```
 
-*Dashed = planned for the second half (not built yet).*
+*Dashed boxes and arrows = planned for the second half (not built yet).*
 
 ### C4 — Container
 
@@ -131,15 +131,15 @@ flowchart LR
         direction TB
         ui[Web UI<br/>Presentation · public/<br/>-shows holdings, value, gain/loss<br/>-collects holding entry & edits]
         service[Application Service<br/>server.js, src/service.js<br/>-orchestrates add/edit/remove<br/>-builds portfolio summary<br/>-connects & syncs brokerage]
-        domain[Domain Model<br/>src/domain.js<br/>-validates holdings<br/>-value, gain/loss, sync conflicts<br/>-planned: risk & diversification scores]
-        data[Data Layer<br/>src/data.js, src/snaptrade.js<br/>-persists holdings & synced data<br/>-wraps SnapTrade client<br/>-planned: market data & news clients]
+        domain[Domain Model<br/>src/domain.js<br/>-validates holdings<br/>-value, gain/loss, sync conflicts<br/>──────────<br/>PLANNED: risk &<br/>diversification scores]
+        data[Data Layer<br/>src/data.js, src/snaptrade.js<br/>-persists holdings & synced data<br/>-wraps SnapTrade client<br/>──────────<br/>PLANNED: market data<br/>& news clients]
         ui --> service --> domain
         service --> data
     end
 
     db[(Portfolio Database<br/>SQLite)]
     snaptrade[[SnapTrade API]]
-    market[[Market Data & News API<br/>planned]]
+    market[[Market Data & News API<br/>PLANNED]]
 
     user --> ui
     data --> db
@@ -150,7 +150,7 @@ flowchart LR
     class market planned
 ```
 
-*Dashed = planned for the second half (not built yet). Planned work inside a box is marked "planned".*
+*Dashed boxes and arrows = planned for the second half (not built yet). Inside a box, anything below the line labeled PLANNED is not built yet.*
 
 ### UML — Class diagram
 
@@ -305,10 +305,12 @@ Decisions live in [`docs/adr/`](docs/adr/).
 
 ## Weekly log
 
-- **Week 1 (Aug 24):** Repo created; project proposal written in the README.
-- **Week 2 (Aug 31):** Tier table for this system (Session 2 studio).
-- **Week 3 (Sep 7):** No commits: Labor Day recess week.
-- **Week 4 (Sep 14):** C4 Context and Container diagrams and UML class diagram (Session 3 studio).
-- **Week 5 (Sep 21):** Node project, CI workflow (first runs failed, fixed the same day), smoke test, ADR-001, static landing page.
-- **Week 6 (Sep 28):** First working slice: manual stock entry with Domain validation (issue #1), merged via PR with an AI critique.
-- **Week 7 (Oct 5):** Node server and SQLite (ADR-002); brokerage-style dashboard; SnapTrade brokerage connection with value, gain/loss and purchase history (ADR-003); edit and remove holdings with sync-conflict handling (ADR-004); docs brought up to date for the midterm.
+Taken from the commit history (weeks run Monday to Sunday, starting Aug 24).
+
+- **Week 1 (Aug 24):** Initial commit; project proposal added to the README and its bullet points fixed.
+- **Week 2 (Aug 31):** System tier table filled in on the README.
+- **Week 3 (Sep 7):** No commits.
+- **Week 4 (Sep 14):** C4 and class diagrams ("L2 studio: C4 + class diagram").
+- **Week 5 (Sep 21):** `package.json`, `package-lock.json`, CI workflow (`ci.yml`), smoke test and ADR-001 created; README run explanation; static landing page.
+- **Week 6 (Sep 28):** Landing page merged (PR #5); manual stock entry with portfolio list (issue #1).
+- **Week 7 (Oct 5):** Manual stock entry merged (PR #6); Node server, SQLite storage and brokerage-style dashboard; brokerage connection through SnapTrade; portfolio value, gain/loss and purchase history; README setup and run steps; edit and remove holdings, in-app confirmation dialog, editing synced holdings with a choice on sync; README and ADRs updated for the midterm. (Everything after the PR #6 merge is on branches not yet merged to `main`.)
