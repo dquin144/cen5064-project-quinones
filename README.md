@@ -288,19 +288,18 @@ Decisions live in [`docs/adr/`](docs/adr/).
 
 ## Weekly log
 
-Taken from the commit history (weeks run Monday to Sunday, starting Aug 24). Each item links to its commits.
-
-- **Week 1 (Aug 24):** Initial commit ([`669dd60`](https://github.com/dquin144/cen5064-project-quinones/commit/669dd60)); README updates ([`5f581aa`](https://github.com/dquin144/cen5064-project-quinones/commit/5f581aa), [`7ca161e`](https://github.com/dquin144/cen5064-project-quinones/commit/7ca161e), [`a64bd12`](https://github.com/dquin144/cen5064-project-quinones/commit/a64bd12)); project proposal added to the README ([`a75e251`](https://github.com/dquin144/cen5064-project-quinones/commit/a75e251)) and its bullet points fixed ([`413e4ab`](https://github.com/dquin144/cen5064-project-quinones/commit/413e4ab)).
-- **Week 2 (Aug 31):** System tier table filled in on the README ([`3c10007`](https://github.com/dquin144/cen5064-project-quinones/commit/3c10007)).
-- **Week 3 (Sep 7):** No commits.
-- **Week 4 (Sep 14):** C4 and class diagrams ([`058bb8c`](https://github.com/dquin144/cen5064-project-quinones/commit/058bb8c)).
-- **Week 5 (Sep 21):** `package.json` and `package-lock.json` ([`b797cba`](https://github.com/dquin144/cen5064-project-quinones/commit/b797cba), [`f7bf362`](https://github.com/dquin144/cen5064-project-quinones/commit/f7bf362)), CI workflow ([`48cfef5`](https://github.com/dquin144/cen5064-project-quinones/commit/48cfef5)), smoke test ([`43f3f36`](https://github.com/dquin144/cen5064-project-quinones/commit/43f3f36)) and ADR-001 ([`4dd4451`](https://github.com/dquin144/cen5064-project-quinones/commit/4dd4451)) created; README run explanation ([`da285cf`](https://github.com/dquin144/cen5064-project-quinones/commit/da285cf)); static landing page ([`28ded91`](https://github.com/dquin144/cen5064-project-quinones/commit/28ded91), [`2f3b4f3`](https://github.com/dquin144/cen5064-project-quinones/commit/2f3b4f3)).
-- **Week 6 (Sep 28):** Landing page merged, PR #5 ([`1ea9675`](https://github.com/dquin144/cen5064-project-quinones/commit/1ea9675)); manual stock entry with portfolio list, issue #1 ([`447f939`](https://github.com/dquin144/cen5064-project-quinones/commit/447f939)).
-- **Week 7 (Oct 5):**
-  - Manual stock entry merged, PR #6 ([`5a260c4`](https://github.com/dquin144/cen5064-project-quinones/commit/5a260c4))
-  - Node server, SQLite storage and brokerage-style dashboard ([`1ede7a8`](https://github.com/dquin144/cen5064-project-quinones/commit/1ede7a8))
-  - Brokerage connection through SnapTrade ([`fd56511`](https://github.com/dquin144/cen5064-project-quinones/commit/fd56511))
-  - Portfolio value, gain/loss and purchase history ([`af17fbe`](https://github.com/dquin144/cen5064-project-quinones/commit/af17fbe))
-  - README setup and run steps ([`a4a6432`](https://github.com/dquin144/cen5064-project-quinones/commit/a4a6432), [`bb7800e`](https://github.com/dquin144/cen5064-project-quinones/commit/bb7800e))
-  - Edit and remove holdings ([`2d91b5e`](https://github.com/dquin144/cen5064-project-quinones/commit/2d91b5e), [`0164312`](https://github.com/dquin144/cen5064-project-quinones/commit/0164312)), in-app confirmation dialog ([`db9afd8`](https://github.com/dquin144/cen5064-project-quinones/commit/db9afd8)), editing synced holdings with a choice on sync ([`8ea274a`](https://github.com/dquin144/cen5064-project-quinones/commit/8ea274a))
-  - README and ADRs updated for the midterm ([`2bc3a73`](https://github.com/dquin144/cen5064-project-quinones/commit/2bc3a73), [`7a99d18`](https://github.com/dquin144/cen5064-project-quinones/commit/7a99d18), [`6f10f5c`](https://github.com/dquin144/cen5064-project-quinones/commit/6f10f5c), [`38246e0`](https://github.com/dquin144/cen5064-project-quinones/commit/38246e0), [`e8c1932`](https://github.com/dquin144/cen5064-project-quinones/commit/e8c1932), [`ed2dcb7`](https://github.com/dquin144/cen5064-project-quinones/commit/ed2dcb7), [`b9dd5e6`](https://github.com/dquin144/cen5064-project-quinones/commit/b9dd5e6))
+- **Week 1 (Aug 24):** Repo created; project proposal written in the README.
+- **Week 2 (Aug 31):** System tier table filled in.
+- **Week 3 (Sep 7):** No commits: took the Labor Day long weekend to catch up with other coursework and responsibilities.
+- **Week 4 (Sep 14):** C4 Context/Container and UML class diagrams.
+  - Weeks 1–4 were design and documentation by plan: Main priority was determining the scope, architecture, and stack to be used for the project.
+- **Week 5 (Sep 21):** Tech stack chosen; project set
+  up with CI and a smoke test; static landing page built.
+- **Week 6 (Sep 28):** First working slice: manual stock entry with Domain validation
+- **Week 7 (Oct 5):** With the stack, CI and first slice in place,
+  features could be built on top of them, using AI-assisted development
+  with a critique on each PR. [Researched brokerage APIs before choosing SnapTrade
+  (ADR-003).] Built: Node server and SQLite storage (ADR-002), brokerage-style
+  dashboard, brokerage connection through SnapTrade, portfolio value and gain/loss,
+  edit/remove holdings with sync-conflict handling (ADR-004), and README/ADR updates
+  for the midterm.
