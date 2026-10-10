@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/dquin144/cen5064-project-quinones/actions/workflows/ci.yml/badge.svg)](https://github.com/dquin144/cen5064-project-quinones/actions/workflows/ci.yml)
 
-**Student:** David Quinones (@dquin144) · **Course:** CEN 5064 Software Design, Fall 2026 · **Partner:** Alejandro Santana (@ASantana0924)
+**Student:** [David Quinones] · **Course:** CEN 5064 Software Design, Fall 2026 · **Partner:** [ASantana0924]
 
 ## Purpose & scope
 
