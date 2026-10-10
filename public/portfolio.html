@@ -10,6 +10,7 @@
 <style>
   :root {
     --paper: #FAF7F2;
+    --card: #FFFEFB;
     --ink: #1C2B22;
     --ink-soft: #4A554D;
     --sage: #3F6B4E;
@@ -19,6 +20,7 @@
   }
 
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
 
   body {
     margin: 0;
@@ -51,31 +53,212 @@
     font-family: 'Newsreader', serif;
     font-weight: 500;
   }
-  h1 { font-size: 2.2rem; margin: 16px 0 28px; }
-  h2 { font-size: 1.3rem; margin: 0 0 16px; }
+  h1 { font-size: 2.2rem; margin: 8px 0 24px; }
+  h2 { font-size: 1.3rem; margin: 0; }
 
   .card {
     border: 1px solid var(--line);
     border-radius: 4px;
     padding: 24px;
-    background: #FFFEFB;
+    background: var(--card);
     margin-bottom: 32px;
   }
 
-  form {
+  /* Summary tiles */
+  .summary {
     display: grid;
-    grid-template-columns: repeat(4, 1fr) auto;
+    grid-template-columns: repeat(4, 1fr);
     gap: 16px;
-    align-items: start;
+    margin-bottom: 24px;
+  }
+  .tile .label {
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+    margin-bottom: 6px;
+  }
+  .tile .value {
+    font-family: 'Newsreader', serif;
+    font-size: 1.7rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .summary .card { margin-bottom: 0; }
+  .tile .value.gain { color: var(--sage-dark); }
+  .tile .value.loss { color: var(--error); }
+  .tile .value .pct {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-left: 6px;
+  }
+  .tile-note {
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+    margin-top: 4px;
   }
 
+  /* Holdings header */
+  .section-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .btn {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 10px 20px;
+    border-radius: 3px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+  .btn-solid { background: var(--sage); color: var(--paper); }
+  .btn-solid:hover { background: var(--sage-dark); }
+  .btn-ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+  .btn-ghost:hover { border-color: var(--ink-soft); }
+  .btn-danger { background: var(--error); color: var(--paper); }
+  .btn-danger:hover { background: #87341f; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--sage-dark);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .btn:focus-visible, .link-btn:focus-visible, a:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+
+  .status {
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+    margin: 0 0 16px;
+  }
+  .status.error { color: var(--error); }
+
+  /* Empty state */
+  .empty {
+    text-align: center;
+    padding: 40px 16px;
+  }
+  .empty h3 {
+    font-family: 'Newsreader', serif;
+    font-weight: 500;
+    font-size: 1.3rem;
+    margin: 0 0 8px;
+  }
+  .empty p {
+    color: var(--ink-soft);
+    margin: 0 auto 20px;
+    max-width: 44ch;
+    line-height: 1.5;
+  }
+  .empty .actions { justify-content: center; }
+
+  /* Table */
+  .table-scroll { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  th { font-size: 0.82rem; font-weight: 500; color: var(--ink-soft); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.muted, .muted { color: var(--ink-soft); }
+  .sub {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+    margin-top: 2px;
+  }
+  td select {
+    font: inherit;
+    font-size: 0.9rem;
+    padding: 4px 6px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--ink);
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  /* Manage holding: one line per purchase with its actions */
+  .manage-list {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+  }
+  .manage-list li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .manage-list .item-actions {
+    display: flex;
+    gap: 14px;
+  }
+  .link-btn.danger { color: var(--error); }
+
+  /* Dialogs */
+  dialog {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 28px;
+    background: var(--card);
+    color: var(--ink);
+    width: min(560px, calc(100vw - 32px));
+  }
+  dialog::backdrop { background: rgba(28, 43, 34, 0.35); }
+  dialog h2 { margin-bottom: 18px; }
+  dialog p { line-height: 1.5; color: var(--ink-soft); margin: 0 0 16px; }
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  .fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px 16px;
+  }
   label {
     display: block;
     font-size: 0.82rem;
     color: var(--ink-soft);
     margin-bottom: 6px;
   }
-
   input {
     width: 100%;
     font: inherit;
@@ -88,7 +271,7 @@
   }
   input:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; }
   input[aria-invalid="true"] { border-color: var(--error); }
-
+  input[readonly] { background: var(--paper); color: var(--ink-soft); }
   .error {
     color: var(--error);
     font-size: 0.8rem;
@@ -96,48 +279,12 @@
     min-height: 1em;
   }
 
-  .btn {
-    font-family: 'IBM Plex Sans', sans-serif;
-    font-size: 0.95rem;
-    font-weight: 500;
-    padding: 10px 20px;
-    margin-top: 22px;
-    border-radius: 3px;
-    border: 1px solid transparent;
-    background: var(--sage);
-    color: var(--paper);
-    cursor: pointer;
+  @media (max-width: 960px) {
+    .summary { grid-template-columns: 1fr 1fr; }
   }
-  .btn:hover { background: var(--sage-dark); }
-  .btn:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.95rem;
-  }
-  th, td {
-    text-align: left;
-    padding: 10px 8px;
-    border-bottom: 1px solid var(--line);
-  }
-  th { font-size: 0.82rem; font-weight: 500; color: var(--ink-soft); }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  td select {
-    font: inherit;
-    font-size: 0.9rem;
-    padding: 4px 6px;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    background: #fff;
-    color: var(--ink);
-  }
-  .empty { color: var(--ink-soft); }
-  .table-scroll { overflow-x: auto; }
-
   @media (max-width: 780px) {
-    form { grid-template-columns: 1fr 1fr; }
-    .btn { margin-top: 0; }
+    .summary { grid-template-columns: 1fr; }
+    .fields { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -148,11 +295,73 @@
   </nav>
 
   <main class="wrap">
-    <h1>Your portfolio</h1>
+    <h1>Portfolio</h1>
+
+    <section class="summary" aria-label="Portfolio summary">
+      <div class="card tile">
+        <div class="label">Total value</div>
+        <div class="value" id="total-value">—</div>
+        <div class="tile-note" id="total-value-note" hidden></div>
+      </div>
+      <div class="card tile">
+        <div class="label">Total gain/loss</div>
+        <div class="value" id="gain-loss">—</div>
+        <div class="tile-note" id="gain-loss-note" hidden></div>
+      </div>
+      <div class="card tile">
+        <div class="label">Holdings</div>
+        <div class="value" id="holdings-count">0</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Accounts connected</div>
+        <div class="value" id="accounts-count">0</div>
+      </div>
+    </section>
+
+    <p class="status" id="status" role="status" hidden></p>
 
     <section class="card">
-      <h2>Add a holding</h2>
-      <form id="holding-form" novalidate>
+      <div class="section-head">
+        <h2>Holdings</h2>
+        <div class="actions" id="head-actions" hidden>
+          <button type="button" class="link-btn" id="sync-btn" hidden>Sync accounts</button>
+          <button type="button" class="link-btn" id="disconnect-btn" hidden>Disconnect</button>
+          <button type="button" class="btn btn-ghost" data-open="connect-dialog">Connect brokerage</button>
+          <button type="button" class="btn btn-solid" data-open="add-dialog">Add holding</button>
+        </div>
+      </div>
+
+      <div class="empty" id="empty-state">
+        <h3>Your portfolio is empty</h3>
+        <p>Add a stock you own by hand, or connect a brokerage account to bring in your holdings automatically.</p>
+        <div class="actions">
+          <button type="button" class="btn btn-solid" data-open="add-dialog">Add holding</button>
+          <button type="button" class="btn btn-ghost" data-open="connect-dialog">Connect brokerage</button>
+        </div>
+      </div>
+
+      <div class="table-scroll" id="holdings-table" hidden>
+        <table>
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th class="num">Value</th>
+              <th class="num">Price</th>
+              <th class="num">Shares</th>
+              <th>Purchase price</th>
+              <th><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="holdings-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="add-dialog" aria-labelledby="add-title">
+    <h2 id="add-title">Add a holding</h2>
+    <form id="holding-form" novalidate>
+      <div class="fields">
         <div>
           <label for="ticker">Ticker</label>
           <input id="ticker" name="ticker" type="text" placeholder="AAPL" autocomplete="off" />
@@ -164,52 +373,90 @@
           <div class="error" id="shares-error"></div>
         </div>
         <div>
-          <label for="purchasePrice">Purchase price ($)</label>
+          <label for="purchasePrice" id="price-label">Purchase price ($)</label>
           <input id="purchasePrice" name="purchasePrice" type="number" step="0.01" min="0" placeholder="150.00" />
           <div class="error" id="purchasePrice-error"></div>
         </div>
-        <div>
+        <div id="date-field">
           <label for="purchaseDate">Purchase date</label>
           <input id="purchaseDate" name="purchaseDate" type="date" />
           <div class="error" id="purchaseDate-error"></div>
         </div>
-        <button type="submit" class="btn">Add holding</button>
-      </form>
-    </section>
-
-    <section class="card">
-      <h2>Holdings</h2>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Ticker</th>
-              <th class="num">Shares</th>
-              <th class="num">Purchase price</th>
-              <th>Purchase date</th>
-              <th class="num">Cost basis</th>
-            </tr>
-          </thead>
-          <tbody id="holdings-body"></tbody>
-        </table>
       </div>
-      <p class="empty" id="empty-msg">No holdings yet. Add your first one above.</p>
-    </section>
-  </main>
+      <p class="error" id="form-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn btn-solid" id="holding-submit">Add holding</button>
+      </div>
+    </form>
+  </dialog>
 
-<script src="js/domain.js"></script>
-<script src="js/data.js"></script>
-<script src="js/service.js"></script>
+  <dialog id="manage-dialog" aria-labelledby="manage-title">
+    <h2 id="manage-title">Manage holding</h2>
+    <p>Edit or remove individual purchases. Changes to brokerage holdings are kept; if they differ from your brokerage when you sync, you'll choose which to keep.</p>
+    <ul class="manage-list" id="manage-list"></ul>
+    <p class="error" id="manage-error" role="alert"></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" data-close>Done</button>
+    </div>
+  </dialog>
+
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+    <h2 id="confirm-title">Are you sure?</h2>
+    <p id="confirm-message"></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" id="confirm-cancel">Cancel</button>
+      <button type="button" class="btn btn-danger" id="confirm-ok">Confirm</button>
+    </div>
+  </dialog>
+
+  <dialog id="conflict-dialog" aria-labelledby="conflict-title">
+    <h2 id="conflict-title">Your changes differ from your brokerage</h2>
+    <p>Everything else is synced. These holdings have changes you made in Folio that don't match your brokerage's latest data:</p>
+    <ul class="manage-list" id="conflict-list"></ul>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" id="conflict-brokerage">Use brokerage data</button>
+      <button type="button" class="btn btn-solid" id="conflict-keep">Keep my changes</button>
+    </div>
+  </dialog>
+
+  <dialog id="connect-dialog" aria-labelledby="connect-title">
+    <h2 id="connect-title">Connect a brokerage</h2>
+    <p>Folio uses SnapTrade to connect read-only to Robinhood, Charles Schwab, E*TRADE, Fidelity and more. You'll sign in on SnapTrade's secure page, then come back here.</p>
+    <p class="error" id="connect-error" role="alert"></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+      <button type="button" class="btn btn-solid" id="connect-continue">Continue</button>
+    </div>
+  </dialog>
+
 <script>
-  // Presentation only: collects input, calls the Service tier, and draws the result.
+  // Presentation only: talks to the server and draws the result. No business rules here.
   const FIELDS = ['ticker', 'shares', 'purchasePrice', 'purchaseDate'];
-  const form = document.getElementById('holding-form');
-  const tbody = document.getElementById('holdings-body');
-  const emptyMsg = document.getElementById('empty-msg');
+  const NOT_CONFIGURED_MSG = "Brokerage connection isn't set up yet. Add SnapTrade keys to .env and restart the server.";
+  const $ = (id) => document.getElementById(id);
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
-  const qty = (n) => n.toLocaleString('en-US');
+  const qty = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 6 });
+  let brokerageConfigured = false;
+  let lastPortfolio = { rows: [] };
+  let editing = null; // the holding being edited ({ id, kind, ... }), or null when adding
 
-  document.getElementById('purchaseDate').max = new Date().toLocaleDateString('en-CA');
+  async function api(method, url, body) {
+    const res = await fetch(url, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return { status: res.status, data: await res.json().catch(() => ({})) };
+  }
+
+  function setStatus(text, isError = false) {
+    $('status').textContent = text;
+    $('status').classList.toggle('error', isError);
+    $('status').hidden = !text;
+  }
+
+  // ---- Rendering ----
 
   function cell(tr, content, cls) {
     const td = document.createElement('td');
@@ -219,64 +466,421 @@
     tr.appendChild(td);
   }
 
-  // Latest purchase first; the price and date dropdowns stay on the same purchase.
-  function purchaseSelects(row) {
-    const price = document.createElement('select');
-    const date = document.createElement('select');
-    price.setAttribute('aria-label', `Purchase price for ${row.ticker}`);
-    date.setAttribute('aria-label', `Purchase date for ${row.ticker}`);
-    row.purchases.forEach((p, i) => {
-      price.add(new Option(`${money.format(p.purchasePrice)} × ${qty(p.shares)}`, i));
-      date.add(new Option(p.purchaseDate, i));
-    });
-    price.addEventListener('change', () => { date.value = price.value; });
-    date.addEventListener('change', () => { price.value = date.value; });
-    return [price, date];
+  // Each purchase has a date and, if it came from a brokerage, the account name.
+  // A synced position with no buy history has no date, only an average cost.
+  const priceLabel = (p) => p.purchaseDate
+    ? money.format(p.purchasePrice)
+    : `${money.format(p.purchasePrice)} avg`;
+  const whenLabel = (p) => [p.purchaseDate, p.source].filter(Boolean).join(' · ') || 'Brokerage';
+
+  // Single purchase: price with its date (or account) underneath.
+  function purchaseText(p) {
+    const span = document.createElement('span');
+    span.textContent = priceLabel(p);
+    const sub = document.createElement('span');
+    sub.className = 'sub';
+    sub.textContent = whenLabel(p);
+    span.appendChild(sub);
+    return span;
   }
 
-  function renderTable() {
-    const rows = getPortfolio();
+  // Several purchases: a dropdown showing the most recent, with the full history inside.
+  function purchaseHistory(row) {
+    const select = document.createElement('select');
+    select.setAttribute('aria-label', `Purchase history for ${row.ticker}`);
+    for (const p of row.purchases) {
+      select.add(new Option(`${priceLabel(p)} × ${qty(p.shares)} · ${whenLabel(p)}`));
+    }
+    return select;
+  }
+
+  // "+$1,234.56 (+12.3%)" in green, or "−$50.00 (−2.1%)" in red. The sign carries
+  // the meaning too, so it doesn't rely on color alone.
+  function renderGainLoss(summary) {
+    const el = $('gain-loss');
+    el.classList.remove('gain', 'loss');
+    el.replaceChildren();
+    if (summary.gainLossPercent === null) {
+      el.textContent = '—';
+    } else {
+      const g = summary.gainLoss;
+      const sign = g > 0 ? '+' : g < 0 ? '−' : '';
+      el.textContent = sign + money.format(Math.abs(g));
+      const pct = document.createElement('span');
+      pct.className = 'pct';
+      pct.textContent = `(${sign}${Math.abs(summary.gainLossPercent).toFixed(2)}%)`;
+      el.appendChild(pct);
+      if (g > 0) el.classList.add('gain');
+      if (g < 0) el.classList.add('loss');
+    }
+    const n = summary.unpricedCount;
+    for (const id of ['total-value-note', 'gain-loss-note']) {
+      $(id).textContent = n ? `Excludes ${n} holding${n === 1 ? '' : 's'} without a market price` : '';
+      $(id).hidden = !n;
+    }
+  }
+
+  const NO_PRICE_TITLE = 'No market price yet. Prices come from connected brokerages for now.';
+
+  function moneyCell(tr, amount) {
+    if (amount === null) {
+      cell(tr, '—', 'num muted');
+      tr.lastChild.title = NO_PRICE_TITLE;
+    } else {
+      cell(tr, money.format(amount), 'num');
+    }
+  }
+
+  function render(portfolio) {
+    const { rows, summary } = portfolio;
+    lastPortfolio = portfolio;
+    brokerageConfigured = Boolean(portfolio.brokerageConfigured);
+
+    const anyPriced = summary.unpricedCount < summary.holdingsCount;
+    $('total-value').textContent = anyPriced ? money.format(summary.totalValue) : '—';
+    renderGainLoss(summary);
+    $('holdings-count').textContent = summary.holdingsCount;
+    $('accounts-count').textContent = summary.accountsConnected;
+
+    const tbody = $('holdings-body');
     tbody.replaceChildren();
     for (const row of rows) {
       const tr = document.createElement('tr');
-      const latest = row.purchases[0];
       cell(tr, row.ticker);
+      moneyCell(tr, row.value);
+      moneyCell(tr, row.currentPrice);
       cell(tr, qty(row.shares), 'num');
-      if (row.purchases.length === 1) {
-        cell(tr, money.format(latest.purchasePrice), 'num');
-        cell(tr, latest.purchaseDate);
-      } else {
-        const [price, date] = purchaseSelects(row);
-        cell(tr, price, 'num');
-        cell(tr, date);
-      }
-      cell(tr, money.format(row.costBasis), 'num');
+      cell(tr, row.purchases.length === 1 ? purchaseText(row.purchases[0]) : purchaseHistory(row));
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'link-btn';
+      edit.textContent = 'Edit';
+      edit.setAttribute('aria-label', `Edit or remove ${row.ticker}`);
+      edit.addEventListener('click', () => openManage(row.ticker));
+      cell(tr, edit, 'num');
       tbody.appendChild(tr);
     }
-    emptyMsg.hidden = rows.length > 0;
+
+    const empty = rows.length === 0;
+    $('empty-state').hidden = !empty;
+    $('holdings-table').hidden = empty;
+    $('head-actions').hidden = empty;
+    $('sync-btn').hidden = summary.accountsConnected === 0;
+    $('disconnect-btn').hidden = summary.accountsConnected === 0;
   }
+
+  async function loadPortfolio() {
+    try {
+      const { status, data } = await api('GET', '/api/portfolio');
+      if (status !== 200) throw new Error(data.error);
+      render(data);
+    } catch {
+      setStatus("Couldn't load your portfolio. Is the server running? (npm start)", true);
+    }
+  }
+
+  // ---- Dialogs ----
+
+  document.querySelectorAll('[data-open]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const dialog = $(btn.dataset.open);
+      if (dialog.id === 'add-dialog') resetForm();
+      if (dialog.id === 'connect-dialog') prepareConnect();
+      dialog.showModal();
+    });
+  });
+  document.querySelectorAll('[data-close]').forEach((btn) => {
+    btn.addEventListener('click', () => btn.closest('dialog').close());
+  });
+
+  // ---- Add holding ----
+
+  const form = $('holding-form');
+  $('purchaseDate').max = new Date().toLocaleDateString('en-CA');
 
   function showErrors(errors) {
     for (const field of FIELDS) {
-      document.getElementById(field + '-error').textContent = errors[field] || '';
-      document.getElementById(field).setAttribute('aria-invalid', errors[field] ? 'true' : 'false');
+      $(field + '-error').textContent = errors[field] || '';
+      $(field).setAttribute('aria-invalid', errors[field] ? 'true' : 'false');
     }
   }
 
-  form.addEventListener('submit', (e) => {
+  // The same form adds a holding, edits a manual purchase, or edits a synced
+  // holding (shares and average price only: brokerages don't report dates).
+  function resetForm(holding = null) {
+    form.reset();
+    showErrors({});
+    $('form-error').textContent = '';
+    editing = holding;
+    const synced = holding?.kind === 'synced';
+    $('add-title').textContent = !holding ? 'Add a holding'
+      : synced ? `Edit ${holding.ticker} (${holding.source || 'brokerage'})`
+      : `Edit ${holding.ticker} purchase`;
+    $('holding-submit').textContent = holding ? 'Save changes' : 'Add holding';
+    $('price-label').textContent = synced ? 'Average price ($)' : 'Purchase price ($)';
+    $('date-field').hidden = synced;
+    $('ticker').readOnly = Boolean(holding); // change ticker = remove + add
+    if (holding) {
+      $('ticker').value = holding.ticker;
+      $('shares').value = holding.shares;
+      $('purchasePrice').value = holding.purchasePrice;
+      $('purchaseDate').value = holding.purchaseDate ?? '';
+    }
+  }
+
+  function saveRequest(body) {
+    if (!editing) return api('POST', '/api/holdings', body);
+    const base = editing.kind === 'synced' ? '/api/brokerage/positions/' : '/api/holdings/';
+    return api('PUT', base + editing.id, body);
+  }
+
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const { errors } = addHolding(Object.fromEntries(new FormData(form)));
-    showErrors(errors);
-    if (Object.keys(errors).length > 0) {
-      document.getElementById(Object.keys(errors)[0]).focus();
+    $('form-error').textContent = '';
+    const editedTicker = editing ? editing.ticker : null;
+    let result;
+    try {
+      result = await saveRequest(Object.fromEntries(new FormData(form)));
+    } catch {
+      $('form-error').textContent = "Couldn't save. Is the server running?";
       return;
     }
-    renderTable();
-    form.reset();
-    document.getElementById('ticker').focus();
+    const { status, data } = result;
+    if (status === 400 && data.errors) {
+      showErrors(data.errors);
+      $(Object.keys(data.errors)[0]).focus();
+      return;
+    }
+    if (status === 404 && data.portfolio) {
+      render(data.portfolio);
+      $('form-error').textContent = data.error;
+      return;
+    }
+    if (status !== 200 && status !== 201) {
+      $('form-error').textContent = data.error || "Couldn't save. Please try again.";
+      return;
+    }
+    $('add-dialog').close();
+    setStatus('');
+    render(data);
+    if (editedTicker) openManage(editedTicker); // back to the list being edited
   });
 
-  renderTable();
+  // ---- In-app confirmation (instead of the browser's confirm() pop-up) ----
+
+  // Resolves true for the confirm button, false for Cancel, Esc or closing.
+  function askConfirm({ title, message, confirmLabel }) {
+    const dialog = $('confirm-dialog');
+    $('confirm-title').textContent = title;
+    $('confirm-message').textContent = message;
+    $('confirm-ok').textContent = confirmLabel;
+    return new Promise((resolve) => {
+      const finish = (answer) => {
+        $('confirm-ok').onclick = $('confirm-cancel').onclick = dialog.onclose = null;
+        if (dialog.open) dialog.close();
+        resolve(answer);
+      };
+      $('confirm-ok').onclick = () => finish(true);
+      $('confirm-cancel').onclick = () => finish(false);
+      dialog.onclose = () => finish(false); // Esc
+      dialog.showModal();
+      $('confirm-cancel').focus(); // the safe choice is focused by default
+    });
+  }
+
+  // ---- Manage (edit / remove) a holding ----
+
+  function openManage(ticker) {
+    const row = lastPortfolio.rows.find((r) => r.ticker === ticker);
+    const dialog = $('manage-dialog');
+    if (!row) {
+      if (dialog.open) dialog.close();
+      return;
+    }
+    $('manage-title').textContent = `Manage ${ticker}`;
+    $('manage-error').textContent = '';
+    const list = $('manage-list');
+    list.replaceChildren();
+    for (const h of row.holdings) list.appendChild(manageItem(h));
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function manageItem(h) {
+    const li = document.createElement('li');
+    const text = document.createElement('span');
+    text.textContent = `${priceLabel(h)} × ${qty(h.shares)}`;
+    const sub = document.createElement('span');
+    sub.className = 'sub';
+    sub.textContent = h.edited ? `${whenLabel(h)} · edited by you` : whenLabel(h);
+    text.appendChild(sub);
+
+    const actions = document.createElement('span');
+    actions.className = 'item-actions';
+    actions.appendChild(linkButton('Edit', '', () => {
+      $('manage-dialog').close();
+      resetForm(h);
+      $('add-dialog').showModal();
+      $('shares').focus(); // the ticker is locked, so start where editing starts
+    }));
+    actions.appendChild(linkButton('Remove', 'danger', () => removeItem(h)));
+    li.append(text, actions);
+    return li;
+  }
+
+  function linkButton(label, extraClass, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `link-btn ${extraClass}`.trim();
+    b.textContent = label;
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  async function removeItem(h) {
+    const ok = await askConfirm(h.kind === 'synced'
+      ? {
+        title: `Remove ${h.ticker}?`,
+        message: `This removes ${h.ticker} from ${h.source || 'your brokerage'} in Folio. When you next sync, you'll choose whether to keep it removed or restore your brokerage's data.`,
+        confirmLabel: 'Remove',
+      }
+      : {
+        title: `Remove this ${h.ticker} purchase?`,
+        message: `${qty(h.shares)} shares at ${money.format(h.purchasePrice)} on ${h.purchaseDate}. This can't be undone.`,
+        confirmLabel: 'Remove purchase',
+      });
+    if (!ok) return;
+    const url = h.kind === 'synced' ? `/api/brokerage/positions/${h.id}` : `/api/holdings/${h.id}`;
+    try {
+      const { status, data } = await api('DELETE', url);
+      if (status === 404 && data.portfolio) {
+        render(data.portfolio);
+        openManage(h.ticker);
+        $('manage-error').textContent = data.error;
+        return;
+      }
+      if (status !== 200) throw new Error(data.error);
+      render(data);
+      openManage(h.ticker); // closes itself if the last purchase was removed
+    } catch (err) {
+      $('manage-error').textContent = err.message || "Couldn't remove it. Is the server running?";
+    }
+  }
+
+  // ---- Connect brokerage ----
+
+  function prepareConnect() {
+    $('connect-error').textContent = brokerageConfigured ? '' : NOT_CONFIGURED_MSG;
+    $('connect-continue').disabled = !brokerageConfigured;
+  }
+
+  $('connect-continue').addEventListener('click', async () => {
+    $('connect-continue').disabled = true;
+    $('connect-error').textContent = '';
+    try {
+      const { status, data } = await api('POST', '/api/brokerage/connect');
+      if (status !== 200 || !data.url) throw new Error(data.error || "Couldn't start the connection.");
+      window.location.href = data.url;
+    } catch (err) {
+      $('connect-error').textContent = err.message || "Couldn't start the connection.";
+      $('connect-continue').disabled = false;
+    }
+  });
+
+  async function syncAccounts() {
+    setStatus('Syncing your accounts…');
+    $('sync-btn').disabled = true;
+    try {
+      const { status, data } = await api('POST', '/api/brokerage/sync');
+      if (status !== 200) throw new Error(data.error || "Couldn't sync your accounts.");
+      render(data);
+      setStatus(`Synced ${data.summary.accountsConnected} account(s).`);
+      if (data.conflicts?.length) showConflicts(data.conflicts);
+    } catch (err) {
+      setStatus(err.message || "Couldn't sync your accounts.", true);
+    } finally {
+      $('sync-btn').disabled = false;
+    }
+  }
+
+  $('sync-btn').addEventListener('click', syncAccounts);
+
+  // ---- Sync conflicts: the user's changes vs. the brokerage's data ----
+
+  const holdingText = (x) => `${qty(x.shares)} shares at ${money.format(x.averagePrice)} avg`;
+
+  function showConflicts(conflicts) {
+    const list = $('conflict-list');
+    list.replaceChildren();
+    for (const c of conflicts) {
+      const li = document.createElement('li');
+      const text = document.createElement('span');
+      text.textContent = [c.ticker, c.accountName].filter(Boolean).join(' · ');
+      const yours = document.createElement('span');
+      yours.className = 'sub';
+      yours.textContent = `You: ${c.action === 'remove' ? 'removed it' : holdingText(c.yours)}`;
+      const theirs = document.createElement('span');
+      theirs.className = 'sub';
+      theirs.textContent = `Brokerage: ${holdingText(c.brokerage)}`;
+      text.append(yours, theirs);
+      li.appendChild(text);
+      list.appendChild(li);
+    }
+    $('conflict-dialog').showModal();
+    $('conflict-keep').focus();
+  }
+
+  async function resolveConflicts(keepMine) {
+    $('conflict-dialog').close();
+    if (keepMine) {
+      setStatus('Synced. Your changes were kept.');
+      return; // nothing to change on the server
+    }
+    try {
+      const { status, data } = await api('POST', '/api/brokerage/conflicts', { keepMine: false });
+      if (status !== 200) throw new Error(data.error);
+      render(data);
+      setStatus("Synced. Your brokerage's data was restored for those holdings.");
+    } catch (err) {
+      setStatus(err.message || "Couldn't apply your brokerage's data.", true);
+    }
+  }
+
+  $('conflict-keep').addEventListener('click', () => resolveConflicts(true));
+  $('conflict-brokerage').addEventListener('click', () => resolveConflicts(false));
+  // Esc keeps the user's changes, the choice that loses nothing.
+  $('conflict-dialog').addEventListener('cancel', (e) => { e.preventDefault(); resolveConflicts(true); });
+
+  $('disconnect-btn').addEventListener('click', async () => {
+    const ok = await askConfirm({
+      title: 'Disconnect your brokerage?',
+      message: "This revokes SnapTrade's access to your brokerage accounts and removes synced holdings from Folio. Manual holdings stay. You can reconnect any time.",
+      confirmLabel: 'Disconnect',
+    });
+    if (!ok) return;
+    setStatus('Disconnecting…');
+    $('disconnect-btn').disabled = true;
+    try {
+      const { status, data } = await api('POST', '/api/brokerage/disconnect');
+      if (status !== 200) throw new Error(data.error || "Couldn't disconnect.");
+      render(data);
+      setStatus('Brokerage disconnected. SnapTrade no longer has access to your accounts.');
+    } catch (err) {
+      setStatus(err.message || "Couldn't disconnect.", true);
+    } finally {
+      $('disconnect-btn').disabled = false;
+    }
+  });
+
+  // ---- Start ----
+
+  (async () => {
+    await loadPortfolio();
+    // SnapTrade sends the user back here after they connect a brokerage.
+    if (new URLSearchParams(location.search).get('brokerage') === 'connected') {
+      history.replaceState(null, '', location.pathname);
+      await syncAccounts();
+    }
+  })();
 </script>
 </body>
 </html>
