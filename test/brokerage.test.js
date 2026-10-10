@@ -173,3 +173,20 @@ test('a failing purchase-history request does not break the sync', async () => {
   const { rows } = await service.syncBrokerage();
   assert.deepStrictEqual(rows.map((r) => [r.ticker, r.purchases[0].purchaseDate]), [['VTI', null]]);
 });
+
+test('a removed synced holding disappears until the next sync brings it back', async () => {
+  snaptrade.setClientForTests(fakeClient({
+    accounts: [{ id: 'acc-1', name: 'E*TRADE Individual', institution_name: 'E*TRADE' }],
+    positionsByAccount: { 'acc-1': [stock('VTI', 4, 200), stock('VOO', 2, 500)] },
+  }));
+  await service.startBrokerageConnection('http://x');
+  const { rows } = await service.syncBrokerage();
+  const vti = rows.find((r) => r.ticker === 'VTI').holdings[0];
+  assert.strictEqual(vti.kind, 'synced');
+
+  service.removeBrokeragePosition(vti.id);
+  assert.deepStrictEqual(service.getPortfolio().rows.map((r) => r.ticker), ['VOO']);
+
+  const after = await service.syncBrokerage();
+  assert.deepStrictEqual(after.rows.map((r) => r.ticker).sort(), ['VOO', 'VTI']);
+});

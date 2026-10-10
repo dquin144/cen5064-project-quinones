@@ -19,6 +19,11 @@ class NotConnectedError extends Error {
     super('No brokerage connected yet. Use "Connect brokerage" first.');
   }
 }
+class NotFoundError extends Error {
+  constructor() {
+    super('That holding no longer exists. The list has been refreshed.');
+  }
+}
 
 // Returns { errors }. An empty errors object means the holding was saved.
 function addHolding(input) {
@@ -27,9 +32,29 @@ function addHolding(input) {
   return { errors };
 }
 
+// Same rules as adding. Returns { errors }; throws NotFoundError for an unknown id.
+function updateHolding(id, input) {
+  const { holding, errors } = validateHolding(input);
+  if (Object.keys(errors).length > 0) return { errors };
+  if (!data.updateHolding(id, holding)) throw new NotFoundError();
+  return { errors };
+}
+
+function removeHolding(id) {
+  if (!data.deleteHolding(id)) throw new NotFoundError();
+}
+
+// Hides a synced position until the next sync, which brings it back.
+function removeBrokeragePosition(id) {
+  if (!data.deleteBrokeragePosition(APP_USER_ID, id)) throw new NotFoundError();
+}
+
 function getPortfolio() {
+  const manual = data.loadHoldings().map((h) => ({ ...h, kind: 'manual' }));
   // Synced positions become undated purchases at their average cost, labeled with their account.
   const synced = data.loadBrokeragePositions(APP_USER_ID).map((p) => ({
+    id: p.id,
+    kind: 'synced',
     ticker: p.ticker,
     shares: p.shares,
     purchasePrice: p.averagePrice,
@@ -44,7 +69,7 @@ function getPortfolio() {
     purchaseDate: b.date,
     source: b.accountName,
   }));
-  const rows = consolidateHoldings([...data.loadHoldings(), ...synced], buys);
+  const rows = consolidateHoldings([...manual, ...synced], buys);
   return {
     rows,
     summary: { ...summarizePortfolio(rows), accountsConnected: data.countBrokerageAccounts(APP_USER_ID) },
@@ -84,11 +109,15 @@ async function disconnectBrokerage() {
 
 module.exports = {
   addHolding,
+  updateHolding,
+  removeHolding,
+  removeBrokeragePosition,
   getPortfolio,
   startBrokerageConnection,
   syncBrokerage,
   disconnectBrokerage,
   NotConfiguredError,
   NotConnectedError,
+  NotFoundError,
   BrokerageApiError: snaptrade.BrokerageApiError,
 };

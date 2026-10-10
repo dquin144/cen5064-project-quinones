@@ -197,6 +197,36 @@
     color: var(--ink);
   }
 
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  /* Manage holding: one line per purchase with its actions */
+  .manage-list {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+  }
+  .manage-list li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .manage-list .item-actions {
+    display: flex;
+    gap: 14px;
+  }
+  .link-btn.danger { color: var(--error); }
+
   /* Dialogs */
   dialog {
     border: 1px solid var(--line);
@@ -239,6 +269,7 @@
   }
   input:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; }
   input[aria-invalid="true"] { border-color: var(--error); }
+  input[readonly] { background: var(--paper); color: var(--ink-soft); }
   .error {
     color: var(--error);
     font-size: 0.8rem;
@@ -316,6 +347,7 @@
               <th class="num">Price</th>
               <th class="num">Shares</th>
               <th>Purchase price</th>
+              <th><span class="visually-hidden">Actions</span></th>
             </tr>
           </thead>
           <tbody id="holdings-body"></tbody>
@@ -352,9 +384,19 @@
       <p class="error" id="form-error" role="alert"></p>
       <div class="dialog-actions">
         <button type="button" class="btn btn-ghost" data-close>Cancel</button>
-        <button type="submit" class="btn btn-solid">Add holding</button>
+        <button type="submit" class="btn btn-solid" id="holding-submit">Add holding</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="manage-dialog" aria-labelledby="manage-title">
+    <h2 id="manage-title">Manage holding</h2>
+    <p>Edit or remove individual purchases. Removed brokerage holdings come back the next time you sync.</p>
+    <ul class="manage-list" id="manage-list"></ul>
+    <p class="error" id="manage-error" role="alert"></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" data-close>Done</button>
+    </div>
   </dialog>
 
   <dialog id="connect-dialog" aria-labelledby="connect-title">
@@ -375,6 +417,8 @@
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
   const qty = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 6 });
   let brokerageConfigured = false;
+  let lastPortfolio = { rows: [] };
+  let editingId = null; // id of the manual purchase being edited, or null when adding
 
   async function api(method, url, body) {
     const res = await fetch(url, {
@@ -468,6 +512,7 @@
 
   function render(portfolio) {
     const { rows, summary } = portfolio;
+    lastPortfolio = portfolio;
     brokerageConfigured = Boolean(portfolio.brokerageConfigured);
 
     const anyPriced = summary.unpricedCount < summary.holdingsCount;
@@ -485,6 +530,13 @@
       moneyCell(tr, row.currentPrice);
       cell(tr, qty(row.shares), 'num');
       cell(tr, row.purchases.length === 1 ? purchaseText(row.purchases[0]) : purchaseHistory(row));
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'link-btn';
+      edit.textContent = 'Edit';
+      edit.setAttribute('aria-label', `Edit or remove ${row.ticker}`);
+      edit.addEventListener('click', () => openManage(row.ticker));
+      cell(tr, edit, 'num');
       tbody.appendChild(tr);
     }
 
@@ -532,18 +584,32 @@
     }
   }
 
-  function resetForm() {
+  // The same form adds a holding or edits one manual purchase.
+  function resetForm(purchase = null) {
     form.reset();
     showErrors({});
     $('form-error').textContent = '';
+    editingId = purchase ? purchase.id : null;
+    $('add-title').textContent = purchase ? `Edit ${purchase.ticker} purchase` : 'Add a holding';
+    $('holding-submit').textContent = purchase ? 'Save changes' : 'Add holding';
+    $('ticker').readOnly = Boolean(purchase); // change ticker = remove + add
+    if (purchase) {
+      $('ticker').value = purchase.ticker;
+      $('shares').value = purchase.shares;
+      $('purchasePrice').value = purchase.purchasePrice;
+      $('purchaseDate').value = purchase.purchaseDate;
+    }
   }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     $('form-error').textContent = '';
+    const editedTicker = editingId ? $('ticker').value : null;
     let result;
     try {
-      result = await api('POST', '/api/holdings', Object.fromEntries(new FormData(form)));
+      result = editingId
+        ? await api('PUT', `/api/holdings/${editingId}`, Object.fromEntries(new FormData(form)))
+        : await api('POST', '/api/holdings', Object.fromEntries(new FormData(form)));
     } catch {
       $('form-error').textContent = "Couldn't save. Is the server running?";
       return;
@@ -554,14 +620,91 @@
       $(Object.keys(data.errors)[0]).focus();
       return;
     }
-    if (status !== 201) {
+    if (status === 404 && data.portfolio) {
+      render(data.portfolio);
+      $('form-error').textContent = data.error;
+      return;
+    }
+    if (status !== 200 && status !== 201) {
       $('form-error').textContent = data.error || "Couldn't save. Please try again.";
       return;
     }
     $('add-dialog').close();
     setStatus('');
     render(data);
+    if (editedTicker) openManage(editedTicker); // back to the list being edited
   });
+
+  // ---- Manage (edit / remove) a holding ----
+
+  function openManage(ticker) {
+    const row = lastPortfolio.rows.find((r) => r.ticker === ticker);
+    const dialog = $('manage-dialog');
+    if (!row) {
+      if (dialog.open) dialog.close();
+      return;
+    }
+    $('manage-title').textContent = `Manage ${ticker}`;
+    $('manage-error').textContent = '';
+    const list = $('manage-list');
+    list.replaceChildren();
+    for (const h of row.holdings) list.appendChild(manageItem(h));
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function manageItem(h) {
+    const li = document.createElement('li');
+    const text = document.createElement('span');
+    text.textContent = `${priceLabel(h)} × ${qty(h.shares)}`;
+    const sub = document.createElement('span');
+    sub.className = 'sub';
+    sub.textContent = h.kind === 'synced' ? `${whenLabel(h)} · returns on next sync if removed` : whenLabel(h);
+    text.appendChild(sub);
+
+    const actions = document.createElement('span');
+    actions.className = 'item-actions';
+    if (h.kind === 'manual') {
+      actions.appendChild(linkButton('Edit', '', () => {
+        $('manage-dialog').close();
+        resetForm(h);
+        $('add-dialog').showModal();
+      }));
+    }
+    actions.appendChild(linkButton('Remove', 'danger', () => removeItem(h)));
+    li.append(text, actions);
+    return li;
+  }
+
+  function linkButton(label, extraClass, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `link-btn ${extraClass}`.trim();
+    b.textContent = label;
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  async function removeItem(h) {
+    const what = h.kind === 'synced'
+      ? `Remove ${h.ticker} from ${h.source || 'your brokerage'}? It comes back the next time you sync.`
+      : `Remove this ${h.ticker} purchase (${qty(h.shares)} shares on ${h.purchaseDate})? This can't be undone.`;
+    if (!confirm(what)) return;
+    const url = h.kind === 'synced' ? `/api/brokerage/positions/${h.id}` : `/api/holdings/${h.id}`;
+    try {
+      const { status, data } = await api('DELETE', url);
+      if (status === 404 && data.portfolio) {
+        render(data.portfolio);
+        openManage(h.ticker);
+        $('manage-error').textContent = data.error;
+        return;
+      }
+      if (status !== 200) throw new Error(data.error);
+      render(data);
+      openManage(h.ticker); // closes itself if the last purchase was removed
+    } catch (err) {
+      $('manage-error').textContent = err.message || "Couldn't remove it. Is the server running?";
+    }
+  }
 
   // ---- Connect brokerage ----
 

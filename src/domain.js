@@ -60,7 +60,8 @@ function byDateDesc(a, b) {
 //   with no recorded buys shows its average cost in the history instead.
 //
 // Each row's purchases are newest first (same date: most recently saved first, undated
-// last), so purchases[0] is the latest purchase.
+// last), so purchases[0] is the latest purchase. row.holdings lists the holdings the
+// row is made of (manual purchases and synced positions), for editing or removing.
 function consolidateHoldings(holdings, buys = []) {
   const byTicker = new Map();
   const group = (ticker) => {
@@ -87,6 +88,7 @@ function consolidateHoldings(holdings, buys = []) {
       currentPrice,
       value: currentPrice === null ? null : shares * currentPrice,
       purchases,
+      holdings: g.holdings.slice().reverse().sort(byDateDesc),
     };
   });
 }

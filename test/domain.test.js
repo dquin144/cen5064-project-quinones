@@ -170,3 +170,12 @@ test('buys for tickers that are no longer held are ignored', () => {
     [{ ticker: 'CABA', shares: 3, purchasePrice: 4, purchaseDate: '2025-07-01', source: 'E*TRADE' }]);
   assert.deepStrictEqual(rows.map((r) => r.ticker), ['VOO']);
 });
+
+test('rows list the holdings they are made of, newest first, for editing', () => {
+  const [row] = consolidateHoldings([
+    { ...lot('VOO', 1, 400, '2024-01-15'), id: 1, kind: 'manual' },
+    { ...synced('VOO', 11, 553.57, 600), id: 7, kind: 'synced' },
+    { ...lot('VOO', 2, 450, '2025-02-01'), id: 2, kind: 'manual' },
+  ]);
+  assert.deepStrictEqual(row.holdings.map((h) => [h.kind, h.id]), [['manual', 2], ['manual', 1], ['synced', 7]]);
+});

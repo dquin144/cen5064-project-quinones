@@ -101,6 +101,19 @@ function saveHolding(h) {
   return { id: Number(lastInsertRowid), ...h };
 }
 
+// Returns true if a holding with that id existed and was changed.
+function updateHolding(id, h) {
+  const { changes } = getDb()
+    .prepare('UPDATE holdings SET ticker = ?, shares = ?, purchase_price = ?, purchase_date = ? WHERE id = ?')
+    .run(h.ticker, h.shares, h.purchasePrice, h.purchaseDate, id);
+  return changes > 0;
+}
+
+// Returns true if a holding with that id existed and was removed.
+function deleteHolding(id) {
+  return getDb().prepare('DELETE FROM holdings WHERE id = ?').run(id).changes > 0;
+}
+
 // ---- Brokerage (SnapTrade) ----
 
 function getBrokerageUser(appUserId) {
@@ -142,17 +155,27 @@ function replaceBrokerageData(appUserId, accounts, positions, buys = []) {
 
 function loadBrokeragePositions(appUserId) {
   return getDb()
-    .prepare(`SELECT p.ticker, p.shares, p.average_price, p.price, a.name AS account_name
+    .prepare(`SELECT p.rowid AS id, p.ticker, p.shares, p.average_price, p.price, a.name AS account_name
               FROM brokerage_positions p JOIN brokerage_accounts a ON a.id = p.account_id
               WHERE a.app_user_id = ? ORDER BY p.rowid`)
     .all(appUserId)
     .map((r) => ({
+      id: r.id,
       ticker: r.ticker,
       shares: r.shares,
       averagePrice: r.average_price,
       price: r.price,
       accountName: r.account_name,
     }));
+}
+
+// Removes one synced position (it comes back on the next sync). Only matches
+// positions in this user's accounts. Returns true if one was removed.
+function deleteBrokeragePosition(appUserId, id) {
+  return getDb()
+    .prepare(`DELETE FROM brokerage_positions WHERE rowid = ?
+              AND account_id IN (SELECT id FROM brokerage_accounts WHERE app_user_id = ?)`)
+    .run(id, appUserId).changes > 0;
 }
 
 function loadBrokerageBuys(appUserId) {
@@ -173,10 +196,13 @@ function countBrokerageAccounts(appUserId) {
 module.exports = {
   loadHoldings,
   saveHolding,
+  updateHolding,
+  deleteHolding,
   getBrokerageUser,
   saveBrokerageUser,
   replaceBrokerageData,
   loadBrokeragePositions,
+  deleteBrokeragePosition,
   loadBrokerageBuys,
   countBrokerageAccounts,
   closeDb,
