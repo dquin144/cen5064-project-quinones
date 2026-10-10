@@ -126,6 +126,8 @@
   .btn-solid:hover { background: var(--sage-dark); }
   .btn-ghost { background: transparent; color: var(--ink); border-color: var(--line); }
   .btn-ghost:hover { border-color: var(--ink-soft); }
+  .btn-danger { background: var(--error); color: var(--paper); }
+  .btn-danger:hover { background: #87341f; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .link-btn {
     background: none;
@@ -399,6 +401,15 @@
     </div>
   </dialog>
 
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+    <h2 id="confirm-title">Are you sure?</h2>
+    <p id="confirm-message"></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" id="confirm-cancel">Cancel</button>
+      <button type="button" class="btn btn-danger" id="confirm-ok">Confirm</button>
+    </div>
+  </dialog>
+
   <dialog id="connect-dialog" aria-labelledby="connect-title">
     <h2 id="connect-title">Connect a brokerage</h2>
     <p>Folio uses SnapTrade to connect read-only to Robinhood, Charles Schwab, E*TRADE, Fidelity and more. You'll sign in on SnapTrade's secure page, then come back here.</p>
@@ -635,6 +646,28 @@
     if (editedTicker) openManage(editedTicker); // back to the list being edited
   });
 
+  // ---- In-app confirmation (instead of the browser's confirm() pop-up) ----
+
+  // Resolves true for the confirm button, false for Cancel, Esc or closing.
+  function askConfirm({ title, message, confirmLabel }) {
+    const dialog = $('confirm-dialog');
+    $('confirm-title').textContent = title;
+    $('confirm-message').textContent = message;
+    $('confirm-ok').textContent = confirmLabel;
+    return new Promise((resolve) => {
+      const finish = (answer) => {
+        $('confirm-ok').onclick = $('confirm-cancel').onclick = dialog.onclose = null;
+        if (dialog.open) dialog.close();
+        resolve(answer);
+      };
+      $('confirm-ok').onclick = () => finish(true);
+      $('confirm-cancel').onclick = () => finish(false);
+      dialog.onclose = () => finish(false); // Esc
+      dialog.showModal();
+      $('confirm-cancel').focus(); // the safe choice is focused by default
+    });
+  }
+
   // ---- Manage (edit / remove) a holding ----
 
   function openManage(ticker) {
@@ -685,10 +718,18 @@
   }
 
   async function removeItem(h) {
-    const what = h.kind === 'synced'
-      ? `Remove ${h.ticker} from ${h.source || 'your brokerage'}? It comes back the next time you sync.`
-      : `Remove this ${h.ticker} purchase (${qty(h.shares)} shares on ${h.purchaseDate})? This can't be undone.`;
-    if (!confirm(what)) return;
+    const ok = await askConfirm(h.kind === 'synced'
+      ? {
+        title: `Remove ${h.ticker}?`,
+        message: `This hides ${h.ticker} from ${h.source || 'your brokerage'} in Folio. It comes back the next time you sync.`,
+        confirmLabel: 'Remove',
+      }
+      : {
+        title: `Remove this ${h.ticker} purchase?`,
+        message: `${qty(h.shares)} shares at ${money.format(h.purchasePrice)} on ${h.purchaseDate}. This can't be undone.`,
+        confirmLabel: 'Remove purchase',
+      });
+    if (!ok) return;
     const url = h.kind === 'synced' ? `/api/brokerage/positions/${h.id}` : `/api/holdings/${h.id}`;
     try {
       const { status, data } = await api('DELETE', url);
@@ -744,7 +785,11 @@
   $('sync-btn').addEventListener('click', syncAccounts);
 
   $('disconnect-btn').addEventListener('click', async () => {
-    const ok = confirm('Disconnect your brokerage accounts? This revokes SnapTrade\'s access and removes synced holdings from Folio. Manual holdings stay.');
+    const ok = await askConfirm({
+      title: 'Disconnect your brokerage?',
+      message: "This revokes SnapTrade's access to your brokerage accounts and removes synced holdings from Folio. Manual holdings stay. You can reconnect any time.",
+      confirmLabel: 'Disconnect',
+    });
     if (!ok) return;
     setStatus('Disconnecting…');
     $('disconnect-btn').disabled = true;
