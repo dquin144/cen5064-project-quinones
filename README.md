@@ -109,161 +109,163 @@ imports `domain.js`, `data.js` and `snaptrade.js`; `domain.js` imports nothing.
 ```mermaid
 %%{init: {'flowchart': {'nodeSpacing': 40, 'rankSpacing': 60, 'curve': 'basis'}}}%%
 flowchart LR
-    user(["Individual Investor<br/><small>(Person)</small>"])
-    folio["Folio<br/><small>(Software System)</small><br/>tracks holdings, shows value<br/>and gain/loss"]
-    snaptrade["SnapTrade<br/><small>(External System)</small><br/>brokerage aggregator API"]
-    brokerages["Brokerages<br/><small>(External Systems)</small><br/>E*TRADE, Robinhood, Schwab, …"]
-    market["Market Data & News API<br/><small>(External System, planned)</small><br/>e.g. Finnhub: live prices,<br/>company news"]
+    user([Individual Investor]) -->|enters holdings, views value & gain/loss| system[Folio]
+    system -->|reads accounts & positions| snaptrade[[SnapTrade API]]
+    snaptrade -->|read-only access| brokerages[[Brokerages<br/>E*TRADE, Robinhood, Schwab, …]]
+    system -.->|planned: prices & news| market[[Market Data & News API<br/>planned]]
 
-    user -->|adds and edits holdings,<br/>views portfolio| folio
-    user -->|signs in to connect<br/>an account read-only| brokerages
-    folio -->|registers user, gets connection link,<br/>reads accounts, positions and buys| snaptrade
-    snaptrade -->|reads account data| brokerages
-    folio -.->|planned: fetches prices<br/>and news for holdings| market
-
-    classDef planned stroke-dasharray: 5 5,fill:#f6f6f6,color:#666
+    classDef planned stroke-dasharray: 5 5
     class market planned
 ```
 
-*Solid = built. Dashed = planned for the second half (not implemented yet).*
+*Dashed = planned for the second half (not built yet).*
 
 ### C4 — Container
 
 ```mermaid
-%%{init: {'flowchart': {'nodeSpacing': 35, 'rankSpacing': 55, 'curve': 'basis'}}}%%
-flowchart TB
-    user(["Individual Investor"])
+%%{init: {'flowchart': {'nodeSpacing': 40, 'rankSpacing': 70, 'curve': 'basis'}}}%%
+flowchart LR
+    user([Individual Investor])
 
-    subgraph folio [Folio]
+    subgraph System [Folio]
         direction TB
-        ui["Web UI — Presentation<br/><small>HTML/JS in the browser</small><br/>public/index.html, public/portfolio.html"]
-        subgraph server [Node.js server]
-            direction TB
-            http["HTTP entry — Service<br/><small>server.js</small><br/>JSON API + static files"]
-            service["Application Service — Service<br/><small>src/service.js</small><br/>orchestrates each use case"]
-            domain["Domain Logic — Domain<br/><small>src/domain.js</small><br/>validation, merging, gain/loss,<br/>sync conflicts<br/><i>planned: allocation, diversification<br/>score, rule-based insights</i>"]
-            data["Data Access — Data<br/><small>src/data.js, src/snaptrade.js</small><br/>SQL queries, SnapTrade client"]
-            dataPlanned["Market Data & News clients — Data<br/><small>src/prices.js, src/news.js (planned)</small><br/>cached quotes, company news"]
-        end
-        db[("Database — Data<br/><small>SQLite file data/folio.db</small>")]
+        ui[Web UI<br/>Presentation · public/<br/>-shows holdings, value, gain/loss<br/>-collects holding entry & edits]
+        service[Application Service<br/>server.js, src/service.js<br/>-orchestrates add/edit/remove<br/>-builds portfolio summary<br/>-connects & syncs brokerage]
+        domain[Domain Model<br/>src/domain.js<br/>-validates holdings<br/>-value, gain/loss, sync conflicts<br/>-planned: risk & diversification scores]
+        data[Data Layer<br/>src/data.js, src/snaptrade.js<br/>-persists holdings & synced data<br/>-wraps SnapTrade client<br/>-planned: market data & news clients]
+        ui --> service --> domain
+        service --> data
     end
 
-    snaptrade["SnapTrade API<br/><small>(External System)</small>"]
-    market["Market Data & News API<br/><small>(External System, planned)</small><br/>e.g. Finnhub"]
+    db[(Portfolio Database<br/>SQLite)]
+    snaptrade[[SnapTrade API]]
+    market[[Market Data & News API<br/>planned]]
 
-    user -->|uses, in a browser| ui
-    ui -->|JSON over HTTP| http
-    http --> service
-    service --> domain
-    service --> data
-    data -->|SQL| db
-    data -->|HTTPS| snaptrade
-    service -.-> dataPlanned
-    dataPlanned -.->|HTTPS| market
+    user --> ui
+    data --> db
+    data --> snaptrade
+    data -.-> market
 
-    classDef planned stroke-dasharray: 5 5,fill:#f6f6f6,color:#666
-    class dataPlanned,market planned
+    classDef planned stroke-dasharray: 5 5
+    class market planned
 ```
 
-*Solid = built. Dashed (and italic text) = planned for the second half (not implemented yet).*
+*Dashed = planned for the second half (not built yet). Planned work inside a box is marked "planned".*
 
 ### UML — Class diagram
 
 The core domain concepts. In code they are plain JavaScript objects, and the
-rules are pure functions in `src/domain.js` (shown as static operations).
-*Planned (not shown until built):* a `RiskScore` computed from the
-portfolio rows, with a diversification score and a concentration warning.
+operations are pure functions in `src/domain.js`. `RiskScore` is planned.
 
 ```mermaid
 classDiagram
-    direction LR
-    class Holding {
-        <<manual purchase>>
-        +id: Integer
-        +ticker: String
-        +shares: Number
-        +purchasePrice: Number
-        +purchaseDate: Date
-        +validateHolding(input)$
-    }
-    class BrokerageAccount {
-        +id: String
-        +name: String
-        +institution: String
-        +syncedAt: DateTime
-    }
-    class BrokeragePosition {
-        <<synced>>
-        +id: Integer
-        +ticker: String
-        +shares: Number
-        +averagePrice: Number
-        +price: Number
-    }
-    class PositionOverride {
-        <<user change>>
-        +ticker: String
-        +action: edit or remove
-        +shares: Number
-        +averagePrice: Number
-        +applyOverrides(positions, overrides)$
-        +findConflicts(positions, overrides)$
-    }
-    class PortfolioRow {
-        +ticker: String
-        +shares: Number
-        +costBasis: Number
-        +currentPrice: Number
-        +value: Number
-        +consolidateHoldings(holdings, buys)$
-        +summarizePortfolio(rows)$
+    direction TB
+    class Portfolio {
+        -totalValue: Decimal
+        -gainLoss: Decimal
+        -gainLossPercent: Decimal
+        +consolidateHoldings()
+        +summarizePortfolio()
     }
 
-    BrokerageAccount "1" --> "0..*" BrokeragePosition : holds
-    PositionOverride "0..1" ..> "1" BrokeragePosition : changes
-    PortfolioRow "1" o-- "0..*" Holding : merges by ticker
-    PortfolioRow "1" o-- "0..*" BrokeragePosition : merges by ticker
+    class Holding {
+        -id: Integer
+        -ticker: String
+        -shares: Decimal
+        -purchasePrice: Decimal
+        -purchaseDate: Date
+        +validateHolding()
+    }
+
+    class BrokeragePosition {
+        -id: Integer
+        -accountName: String
+        -ticker: String
+        -shares: Decimal
+        -averagePrice: Decimal
+        -price: Decimal
+    }
+
+    class PositionOverride {
+        -ticker: String
+        -action: edit or remove
+        -shares: Decimal
+        -averagePrice: Decimal
+        +applyOverrides()
+        +findConflicts()
+    }
+
+    class RiskScore {
+        <<planned>>
+        -diversificationScore: Decimal
+        -concentrationWarning: Boolean
+        +overallRiskLabel() String
+    }
+
+    Portfolio "1" --> "many" Holding : manual
+    Portfolio "1" --> "many" BrokeragePosition : synced
+    PositionOverride "0..1" --> "1" BrokeragePosition : user change to
+    Portfolio "1" --> "1" RiskScore : scored by (planned)
 ```
 
-### UML — Sequence diagram (UC1: add a holding)
-
-Each message goes one way down the tiers; replies come back the same path.
+### UML — Sequence diagram (UC1: add a holding, built)
 
 ```mermaid
-%%{init: {'sequence': {'messageMargin': 35, 'mirrorActors': false, 'boxMargin': 10}}}%%
+%%{init: {'sequence': {'messageMargin': 45, 'mirrorActors': false, 'boxMargin': 15}}}%%
 sequenceDiagram
     actor U as User
-    participant UI as Web UI<br/>(portfolio.html)
-    participant H as HTTP entry<br/>(server.js)
-    participant S as Service<br/>(service.js)
-    participant Dom as Domain<br/>(domain.js)
-    participant D as Data<br/>(data.js)
-    participant DB as SQLite
+    participant UI as Web UI
+    participant S as Service
+    participant Dom as Domain
+    participant D as Data
 
-    U->>UI: fill in form, click "Add holding"
-    UI->>H: POST /api/holdings {ticker, shares, purchasePrice, purchaseDate}
-    H->>S: addHolding(input)
+    U->>UI: enter holding, click "Add holding"
+    UI->>S: POST /api/holdings (addHolding)
     S->>Dom: validateHolding(input)
-    Dom-->>S: {holding, errors}
-    alt input is invalid (e.g. ticker "AAPL!")
-        S-->>H: {errors}
-        H-->>UI: 400 {errors}
-        UI-->>U: error shown under each field, nothing saved
-    else input is valid
+    Dom-->>S: holding + errors
+    alt invalid (e.g. ticker "AAPL!")
+        S-->>UI: 400 errors
+        UI-->>U: error shown, nothing saved
+    else valid
         S->>D: saveHolding(holding)
-        D->>DB: INSERT INTO holdings
-        DB-->>D: new id
-        D-->>S: saved holding
-        S-->>H: no errors
-        H->>S: getPortfolio()
-        S->>D: load holdings, positions, user changes, buys
-        D-->>S: rows
-        S->>Dom: applyOverrides, consolidateHoldings, summarizePortfolio
-        Dom-->>S: portfolio rows + summary
-        S-->>H: portfolio
-        H-->>UI: 201 portfolio
-        UI-->>U: table and summary tiles update
+        D-->>S: saved
+        S->>D: load holdings & synced positions
+        D-->>S: holdings
+        S->>Dom: consolidateHoldings, summarizePortfolio
+        Dom-->>S: rows + totals
+        S-->>UI: 201 portfolio
+        UI-->>U: table and totals update
     end
+```
+
+### UML — Sequence diagram (UC4: news & recommendations, planned)
+
+How the planned news feature will flow once built, using the same tiers.
+
+```mermaid
+%%{init: {'sequence': {'messageMargin': 45, 'mirrorActors': false, 'boxMargin': 15}}}%%
+sequenceDiagram
+    actor U as User
+    participant UI as Web UI
+    participant S as Service
+    participant Dom as Domain
+    participant D as Data
+    participant N as News API
+
+    U->>UI: open portfolio dashboard
+    UI->>S: getRecommendations()
+    S->>D: load holdings
+    D-->>S: holdings
+    S->>Dom: identifyRelevantTopics(holdings)
+    Dom-->>S: tickers & keywords
+    S->>D: fetchNews(tickers)
+    D->>N: GET articles(tickers)
+    N-->>D: articles
+    D-->>S: articles
+    S->>Dom: matchNewsToHoldings(articles, holdings)
+    Dom-->>S: ranked recommendations
+    S-->>UI: recommendations list
+    UI-->>U: recommendations shown
 ```
 
 ## Plan for the second half
