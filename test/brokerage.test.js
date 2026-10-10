@@ -173,3 +173,119 @@ test('a failing purchase-history request does not break the sync', async () => {
   const { rows } = await service.syncBrokerage();
   assert.deepStrictEqual(rows.map((r) => [r.ticker, r.purchases[0].purchaseDate]), [['VTI', null]]);
 });
+
+// ---- Editing and removing synced holdings, and sync conflicts ----
+
+const etrade = { id: 'acc-1', name: 'E*TRADE Individual', institution_name: 'E*TRADE' };
+
+// Connects and syncs with the given positions; returns the fake client so a test
+// can change what the "brokerage" reports before the next sync.
+async function connectWith(positions) {
+  const fake = fakeClient({ accounts: [etrade], positionsByAccount: { 'acc-1': positions } });
+  snaptrade.setClientForTests(fake);
+  await service.startBrokerageConnection('http://x');
+  await service.syncBrokerage();
+  return fake;
+}
+function brokerageNow(fake, positions) {
+  fake.accountInformation.getAllAccountPositions = () => Promise.resolve({ data: { results: positions } });
+}
+function syncedHolding(ticker) {
+  const row = service.getPortfolio().rows.find((r) => r.ticker === ticker);
+  return row?.holdings.find((h) => h.kind === 'synced');
+}
+
+test('editing a synced holding shows the edit and marks it edited', async () => {
+  await connectWith([stock('NVDA', 25, 138.57)]);
+  const { errors } = service.editBrokeragePosition(syncedHolding('NVDA').id, { shares: '20', purchasePrice: '140' });
+  assert.deepStrictEqual(errors, {});
+  const h = syncedHolding('NVDA');
+  assert.deepStrictEqual([h.shares, h.purchasePrice, h.edited], [20, 140, true]);
+});
+
+test('synced edits use their own validation (no date needed)', async () => {
+  await connectWith([stock('NVDA', 25, 138.57)]);
+  const { errors } = service.editBrokeragePosition(syncedHolding('NVDA').id, { shares: '0', purchasePrice: '' });
+  assert.ok(errors.shares);
+  assert.ok(errors.purchasePrice);
+  assert.strictEqual(syncedHolding('NVDA').shares, 25, 'nothing changed');
+});
+
+test('sync reports an edit as a conflict and keeps it until the user decides', async () => {
+  await connectWith([stock('NVDA', 25, 138.57), stock('VOO', 11, 553.57)]);
+  service.editBrokeragePosition(syncedHolding('NVDA').id, { shares: '20', purchasePrice: '140' });
+
+  const result = await service.syncBrokerage();
+  assert.deepStrictEqual(result.conflicts.map((c) => [c.ticker, c.action, c.yours.shares, c.brokerage.shares]),
+    [['NVDA', 'edit', 20, 25]]);
+  assert.strictEqual(syncedHolding('NVDA').shares, 20, 'edit still shown while the user decides');
+  assert.strictEqual(syncedHolding('VOO').shares, 11, 'untouched holdings synced normally');
+});
+
+test('"keep my changes" keeps the edit; "use brokerage data" restores it', async () => {
+  await connectWith([stock('NVDA', 25, 138.57)]);
+  service.editBrokeragePosition(syncedHolding('NVDA').id, { shares: '20', purchasePrice: '140' });
+  await service.syncBrokerage();
+
+  service.resolveSyncConflicts(true);
+  assert.strictEqual(syncedHolding('NVDA').shares, 20);
+
+  service.resolveSyncConflicts(false);
+  const h = syncedHolding('NVDA');
+  assert.deepStrictEqual([h.shares, h.purchasePrice, h.edited], [25, 138.57, false]);
+});
+
+test('a removed synced holding stays removed through sync until the user restores it', async () => {
+  await connectWith([stock('VTI', 4, 200), stock('VOO', 2, 500)]);
+  service.removeBrokeragePosition(syncedHolding('VTI').id);
+  assert.deepStrictEqual(service.getPortfolio().rows.map((r) => r.ticker), ['VOO']);
+
+  const { conflicts, rows } = await service.syncBrokerage();
+  assert.deepStrictEqual(conflicts.map((c) => [c.ticker, c.action, c.brokerage.shares]), [['VTI', 'remove', 4]]);
+  assert.deepStrictEqual(rows.map((r) => r.ticker), ['VOO'], 'still removed after sync');
+
+  const restored = service.resolveSyncConflicts(false);
+  assert.deepStrictEqual(restored.rows.map((r) => r.ticker).sort(), ['VOO', 'VTI']);
+});
+
+test('changes that no longer matter are dropped quietly, without a conflict', async () => {
+  const fake = await connectWith([stock('VTI', 4, 200), stock('NVDA', 25, 138.57)]);
+  service.removeBrokeragePosition(syncedHolding('VTI').id);
+  service.editBrokeragePosition(syncedHolding('NVDA').id, { shares: '30', purchasePrice: '140' });
+
+  // Meanwhile at the brokerage: VTI was sold, and NVDA now matches the edit exactly.
+  brokerageNow(fake, [stock('NVDA', 30, 140)]);
+  assert.deepStrictEqual((await service.syncBrokerage()).conflicts, []);
+
+  // The saved changes are gone, so a later brokerage change syncs normally.
+  brokerageNow(fake, [stock('NVDA', 35, 141)]);
+  assert.deepStrictEqual((await service.syncBrokerage()).conflicts, []);
+  assert.strictEqual(syncedHolding('NVDA').shares, 35);
+});
+
+test('an edit to a holding the brokerage no longer has is dropped, not asked about forever', async () => {
+  const fake = await connectWith([stock('NVDA', 25, 138.57)]);
+  service.editBrokeragePosition(syncedHolding('NVDA').id, { shares: '20', purchasePrice: '140' });
+
+  brokerageNow(fake, []); // sold everything at the brokerage
+  assert.deepStrictEqual((await service.syncBrokerage()).conflicts, []);
+
+  // Buying it again later syncs normally, without the old edit coming back.
+  brokerageNow(fake, [stock('NVDA', 5, 190)]);
+  assert.deepStrictEqual((await service.syncBrokerage()).conflicts, []);
+  assert.deepStrictEqual([syncedHolding('NVDA').shares, syncedHolding('NVDA').edited], [5, false]);
+});
+
+test('disconnect also clears the user changes to synced holdings', async () => {
+  await connectWith([stock('NVDA', 25, 138.57)]);
+  service.removeBrokeragePosition(syncedHolding('NVDA').id);
+  await service.disconnectBrokerage();
+  await connectWith([stock('NVDA', 25, 138.57)]);
+  assert.strictEqual(syncedHolding('NVDA').shares, 25, 'reconnecting starts fresh');
+});
+
+test('editing or removing an unknown synced holding throws NotFoundError', async () => {
+  await connectWith([stock('NVDA', 25, 138.57)]);
+  assert.throws(() => service.editBrokeragePosition(999, { shares: '1', purchasePrice: '1' }), service.NotFoundError);
+  assert.throws(() => service.removeBrokeragePosition(999), service.NotFoundError);
+});

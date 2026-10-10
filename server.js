@@ -64,6 +64,13 @@ function serveStatic(pathname, res) {
   });
 }
 
+// "/api/holdings/12" with prefix "/api/holdings/" -> 12; anything else -> null.
+function matchId(pathname, prefix) {
+  if (!pathname.startsWith(prefix)) return null;
+  const rest = pathname.slice(prefix.length);
+  return /^[1-9]\d{0,15}$/.test(rest) ? Number(rest) : null;
+}
+
 async function handle(req, res) {
   const { pathname } = new URL(req.url, 'http://localhost');
   const route = `${req.method} ${pathname}`;
@@ -76,12 +83,37 @@ async function handle(req, res) {
     if (Object.keys(errors).length > 0) return sendJson(res, 400, { errors });
     return sendJson(res, 201, service.getPortfolio());
   }
+  const holdingId = matchId(pathname, '/api/holdings/');
+  if (holdingId && req.method === 'PUT') {
+    const { errors } = service.updateHolding(holdingId, await readJson(req));
+    if (Object.keys(errors).length > 0) return sendJson(res, 400, { errors });
+    return sendJson(res, 200, service.getPortfolio());
+  }
+  if (holdingId && req.method === 'DELETE') {
+    service.removeHolding(holdingId);
+    return sendJson(res, 200, service.getPortfolio());
+  }
+  const positionId = matchId(pathname, '/api/brokerage/positions/');
+  if (positionId && req.method === 'PUT') {
+    const { errors } = service.editBrokeragePosition(positionId, await readJson(req));
+    if (Object.keys(errors).length > 0) return sendJson(res, 400, { errors });
+    return sendJson(res, 200, service.getPortfolio());
+  }
+  if (positionId && req.method === 'DELETE') {
+    service.removeBrokeragePosition(positionId);
+    return sendJson(res, 200, service.getPortfolio());
+  }
   if (route === 'POST /api/brokerage/connect') {
     const url = await service.startBrokerageConnection(`${APP_URL}/portfolio.html?brokerage=connected`);
     return sendJson(res, 200, { url });
   }
   if (route === 'POST /api/brokerage/sync') {
     return sendJson(res, 200, await service.syncBrokerage());
+  }
+  if (route === 'POST /api/brokerage/conflicts') {
+    const { keepMine } = await readJson(req);
+    if (typeof keepMine !== 'boolean') throw new BadRequest('keepMine must be true or false.');
+    return sendJson(res, 200, service.resolveSyncConflicts(keepMine));
   }
   if (route === 'POST /api/brokerage/disconnect') {
     return sendJson(res, 200, await service.disconnectBrokerage());
@@ -97,6 +129,10 @@ const server = http.createServer((req, res) => {
     if (err instanceof BadRequest) return sendJson(res, err.status, { error: err.message });
     if (err instanceof service.NotConfiguredError) return sendJson(res, 503, { error: err.message });
     if (err instanceof service.NotConnectedError) return sendJson(res, 409, { error: err.message });
+    // Send the current portfolio along so the page can refresh its stale list.
+    if (err instanceof service.NotFoundError) {
+      return sendJson(res, 404, { error: err.message, portfolio: service.getPortfolio() });
+    }
     if (err instanceof service.BrokerageApiError) {
       console.error(err.message);
       return sendJson(res, 502, { error: err.message });

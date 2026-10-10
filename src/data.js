@@ -40,6 +40,21 @@ const SCHEMA = `
     price         REAL
   );
 
+  -- The user's own edits and removals of synced holdings, kept separate from
+  -- the brokerage's data so a sync never silently overwrites them. Keyed by
+  -- account and ticker (position rows are replaced on every sync), so there's
+  -- deliberately no foreign key to brokerage_accounts.
+  CREATE TABLE IF NOT EXISTS brokerage_overrides (
+    app_user_id   TEXT NOT NULL,
+    account_id    TEXT NOT NULL,
+    ticker        TEXT NOT NULL,
+    action        TEXT NOT NULL CHECK (action IN ('edit', 'remove')),
+    shares        REAL,
+    average_price REAL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (app_user_id, account_id, ticker)
+  );
+
   -- Past buy transactions, used only for the purchase history display.
   CREATE TABLE IF NOT EXISTS brokerage_buys (
     account_id TEXT NOT NULL REFERENCES brokerage_accounts(id) ON DELETE CASCADE,
@@ -101,6 +116,19 @@ function saveHolding(h) {
   return { id: Number(lastInsertRowid), ...h };
 }
 
+// Returns true if a holding with that id existed and was changed.
+function updateHolding(id, h) {
+  const { changes } = getDb()
+    .prepare('UPDATE holdings SET ticker = ?, shares = ?, purchase_price = ?, purchase_date = ? WHERE id = ?')
+    .run(h.ticker, h.shares, h.purchasePrice, h.purchaseDate, id);
+  return changes > 0;
+}
+
+// Returns true if a holding with that id existed and was removed.
+function deleteHolding(id) {
+  return getDb().prepare('DELETE FROM holdings WHERE id = ?').run(id).changes > 0;
+}
+
 // ---- Brokerage (SnapTrade) ----
 
 function getBrokerageUser(appUserId) {
@@ -142,17 +170,73 @@ function replaceBrokerageData(appUserId, accounts, positions, buys = []) {
 
 function loadBrokeragePositions(appUserId) {
   return getDb()
-    .prepare(`SELECT p.ticker, p.shares, p.average_price, p.price, a.name AS account_name
+    .prepare(`SELECT p.rowid AS id, p.account_id, p.ticker, p.shares, p.average_price, p.price,
+                     a.name AS account_name
               FROM brokerage_positions p JOIN brokerage_accounts a ON a.id = p.account_id
               WHERE a.app_user_id = ? ORDER BY p.rowid`)
     .all(appUserId)
+    .map(toPosition);
+}
+
+// One synced position by id, only if it's in this user's accounts; else null.
+function getBrokeragePosition(appUserId, id) {
+  const row = getDb()
+    .prepare(`SELECT p.rowid AS id, p.account_id, p.ticker, p.shares, p.average_price, p.price,
+                     a.name AS account_name
+              FROM brokerage_positions p JOIN brokerage_accounts a ON a.id = p.account_id
+              WHERE p.rowid = ? AND a.app_user_id = ?`)
+    .get(id, appUserId);
+  return row ? toPosition(row) : null;
+}
+
+function toPosition(r) {
+  return {
+    id: r.id,
+    accountId: r.account_id,
+    ticker: r.ticker,
+    shares: r.shares,
+    averagePrice: r.average_price,
+    price: r.price,
+    accountName: r.account_name,
+  };
+}
+
+// ---- The user's edits and removals of synced holdings ----
+
+function loadOverrides(appUserId) {
+  return getDb()
+    .prepare(`SELECT account_id, ticker, action, shares, average_price
+              FROM brokerage_overrides WHERE app_user_id = ? ORDER BY created_at, ticker`)
+    .all(appUserId)
     .map((r) => ({
+      accountId: r.account_id,
       ticker: r.ticker,
+      action: r.action,
       shares: r.shares,
       averagePrice: r.average_price,
-      price: r.price,
-      accountName: r.account_name,
     }));
+}
+
+// Adds or replaces the override for one account + ticker.
+function saveOverride(appUserId, o) {
+  getDb()
+    .prepare(`INSERT INTO brokerage_overrides (app_user_id, account_id, ticker, action, shares, average_price)
+              VALUES (?, ?, ?, ?, ?, ?)
+              ON CONFLICT (app_user_id, account_id, ticker) DO UPDATE SET
+                action = excluded.action, shares = excluded.shares,
+                average_price = excluded.average_price, created_at = datetime('now')`)
+    .run(appUserId, o.accountId, o.ticker, o.action, o.shares ?? null, o.averagePrice ?? null);
+}
+
+// Deletes the overrides for the given { accountId, ticker } keys, or all of them.
+function deleteOverrides(appUserId, keys = null) {
+  const db = getDb();
+  if (keys === null) {
+    db.prepare('DELETE FROM brokerage_overrides WHERE app_user_id = ?').run(appUserId);
+    return;
+  }
+  const del = db.prepare('DELETE FROM brokerage_overrides WHERE app_user_id = ? AND account_id = ? AND ticker = ?');
+  for (const k of keys) del.run(appUserId, k.accountId, k.ticker);
 }
 
 function loadBrokerageBuys(appUserId) {
@@ -173,10 +257,16 @@ function countBrokerageAccounts(appUserId) {
 module.exports = {
   loadHoldings,
   saveHolding,
+  updateHolding,
+  deleteHolding,
   getBrokerageUser,
   saveBrokerageUser,
   replaceBrokerageData,
   loadBrokeragePositions,
+  getBrokeragePosition,
+  loadOverrides,
+  saveOverride,
+  deleteOverrides,
   loadBrokerageBuys,
   countBrokerageAccounts,
   closeDb,
