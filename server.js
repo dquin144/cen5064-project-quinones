@@ -94,6 +94,11 @@ async function handle(req, res) {
     return sendJson(res, 200, service.getPortfolio());
   }
   const positionId = matchId(pathname, '/api/brokerage/positions/');
+  if (positionId && req.method === 'PUT') {
+    const { errors } = service.editBrokeragePosition(positionId, await readJson(req));
+    if (Object.keys(errors).length > 0) return sendJson(res, 400, { errors });
+    return sendJson(res, 200, service.getPortfolio());
+  }
   if (positionId && req.method === 'DELETE') {
     service.removeBrokeragePosition(positionId);
     return sendJson(res, 200, service.getPortfolio());
@@ -104,6 +109,11 @@ async function handle(req, res) {
   }
   if (route === 'POST /api/brokerage/sync') {
     return sendJson(res, 200, await service.syncBrokerage());
+  }
+  if (route === 'POST /api/brokerage/conflicts') {
+    const { keepMine } = await readJson(req);
+    if (typeof keepMine !== 'boolean') throw new BadRequest('keepMine must be true or false.');
+    return sendJson(res, 200, service.resolveSyncConflicts(keepMine));
   }
   if (route === 'POST /api/brokerage/disconnect') {
     return sendJson(res, 200, await service.disconnectBrokerage());

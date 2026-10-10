@@ -63,7 +63,7 @@ test('adds the price column to a database created before it existed', () => {
   process.env.DB_FILE = file;
   try {
     assert.deepStrictEqual(data.loadBrokeragePositions('local'),
-      [{ id: 1, ticker: 'VTI', shares: 3, averagePrice: 200, price: null, accountName: 'Old Account' }]);
+      [{ id: 1, accountId: 'a1', ticker: 'VTI', shares: 3, averagePrice: 200, price: null, accountName: 'Old Account' }]);
   } finally {
     closeDb();
     process.env.DB_FILE = ':memory:';

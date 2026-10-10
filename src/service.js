@@ -2,7 +2,14 @@
 // and the SnapTrade client to talk to brokerages.
 
 const crypto = require('node:crypto');
-const { validateHolding, consolidateHoldings, summarizePortfolio } = require('./domain');
+const {
+  validateHolding,
+  validatePositionEdit,
+  applyOverrides,
+  findConflicts,
+  consolidateHoldings,
+  summarizePortfolio,
+} = require('./domain');
 const data = require('./data');
 const snaptrade = require('./snaptrade');
 
@@ -44,17 +51,43 @@ function removeHolding(id) {
   if (!data.deleteHolding(id)) throw new NotFoundError();
 }
 
-// Hides a synced position until the next sync, which brings it back.
+// Edits and removals of synced holdings are saved as the user's own changes;
+// the brokerage's data underneath is untouched. A later sync asks the user
+// which to keep if the two disagree.
+function editBrokeragePosition(id, input) {
+  const position = data.getBrokeragePosition(APP_USER_ID, id);
+  if (!position) throw new NotFoundError();
+  const { values, errors } = validatePositionEdit(input);
+  if (Object.keys(errors).length > 0) return { errors };
+  data.saveOverride(APP_USER_ID, { accountId: position.accountId, ticker: position.ticker, action: 'edit', ...values });
+  return { errors };
+}
+
 function removeBrokeragePosition(id) {
-  if (!data.deleteBrokeragePosition(APP_USER_ID, id)) throw new NotFoundError();
+  const position = data.getBrokeragePosition(APP_USER_ID, id);
+  if (!position) throw new NotFoundError();
+  data.saveOverride(APP_USER_ID, { accountId: position.accountId, ticker: position.ticker, action: 'remove' });
+}
+
+// keepMine: true keeps the user's changes; false discards the ones the brokerage
+// disagrees with, restoring the brokerage's numbers (and removed holdings).
+function resolveSyncConflicts(keepMine) {
+  if (!keepMine) {
+    const { conflicts } = findConflicts(data.loadBrokeragePositions(APP_USER_ID), data.loadOverrides(APP_USER_ID));
+    data.deleteOverrides(APP_USER_ID, conflicts);
+  }
+  return getPortfolio();
 }
 
 function getPortfolio() {
   const manual = data.loadHoldings().map((h) => ({ ...h, kind: 'manual' }));
-  // Synced positions become undated purchases at their average cost, labeled with their account.
-  const synced = data.loadBrokeragePositions(APP_USER_ID).map((p) => ({
+  // Synced positions (with the user's changes applied) become undated purchases at
+  // their average cost, labeled with their account.
+  const positions = applyOverrides(data.loadBrokeragePositions(APP_USER_ID), data.loadOverrides(APP_USER_ID));
+  const synced = positions.map((p) => ({
     id: p.id,
     kind: 'synced',
+    edited: Boolean(p.edited),
     ticker: p.ticker,
     shares: p.shares,
     purchasePrice: p.averagePrice,
@@ -94,7 +127,12 @@ async function syncBrokerage() {
   if (!user) throw new NotConnectedError();
   const { accounts, positions, buys } = await snaptrade.fetchAccountsAndPositions(user);
   data.replaceBrokerageData(APP_USER_ID, accounts, positions, buys);
-  return getPortfolio();
+
+  // Holdings the user hasn't changed are now up to date. For the ones they have,
+  // quietly drop changes that no longer matter and report the rest as conflicts.
+  const { conflicts, settled } = findConflicts(data.loadBrokeragePositions(APP_USER_ID), data.loadOverrides(APP_USER_ID));
+  data.deleteOverrides(APP_USER_ID, settled);
+  return { ...getPortfolio(), conflicts };
 }
 
 // Revokes SnapTrade's access to every connected brokerage and removes synced
@@ -104,6 +142,7 @@ async function disconnectBrokerage() {
   const user = data.getBrokerageUser(APP_USER_ID);
   if (user) await snaptrade.disconnectAll(user);
   data.replaceBrokerageData(APP_USER_ID, [], []);
+  data.deleteOverrides(APP_USER_ID);
   return getPortfolio();
 }
 
@@ -111,7 +150,9 @@ module.exports = {
   addHolding,
   updateHolding,
   removeHolding,
+  editBrokeragePosition,
   removeBrokeragePosition,
+  resolveSyncConflicts,
   getPortfolio,
   startBrokerageConnection,
   syncBrokerage,

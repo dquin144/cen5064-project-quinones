@@ -41,6 +41,64 @@ function validateHolding(input, today = todayISO()) {
   return { holding: { ticker, shares, purchasePrice, purchaseDate }, errors };
 }
 
+// Editing a synced holding: only shares and average price (brokerages don't report
+// purchase dates). Returns { values, errors } like validateHolding.
+function validatePositionEdit(input) {
+  const shares = Number(input.shares);
+  const averagePrice = Number(input.purchasePrice);
+  const errors = {};
+  if (input.shares === '' || !(shares > 0)) errors.shares = 'Shares must be greater than 0.';
+  if (input.purchasePrice === '' || !(averagePrice > 0)) errors.purchasePrice = 'Average price must be greater than 0.';
+  return { values: { shares, averagePrice }, errors };
+}
+
+// ---- The user's changes to synced holdings vs. the brokerage's data ----
+// An override is { accountId, ticker, action: 'edit' | 'remove', shares, averagePrice }.
+
+const sameHolding = (a, b) => a.accountId === b.accountId && a.ticker === b.ticker;
+const close = (a, b) => Math.abs(a - b) < 1e-6;
+
+// The positions as the user wants to see them: edits applied (marked edited),
+// removed ones left out.
+function applyOverrides(positions, overrides) {
+  const result = [];
+  for (const p of positions) {
+    const o = overrides.find((x) => sameHolding(x, p));
+    if (!o) result.push(p);
+    else if (o.action === 'edit') result.push({ ...p, shares: o.shares, averagePrice: o.averagePrice, edited: true });
+  }
+  return result;
+}
+
+// Compares the user's changes with fresh brokerage data.
+// conflicts: changes the brokerage disagrees with; the user decides what to keep.
+// settled: changes that no longer matter (removed and also gone at the brokerage,
+// or edited to exactly the brokerage's values); safe to drop without asking.
+function findConflicts(positions, overrides) {
+  const conflicts = [];
+  const settled = [];
+  for (const o of overrides) {
+    const p = positions.find((x) => sameHolding(x, o));
+    const brokerage = p ? { shares: p.shares, averagePrice: p.averagePrice } : null;
+    const key = { accountId: o.accountId, ticker: o.ticker };
+    if (o.action === 'remove') {
+      if (p) conflicts.push({ ...key, action: 'remove', accountName: p.accountName, yours: null, brokerage });
+      else settled.push(key);
+    } else if (p && close(p.shares, o.shares) && close(p.averagePrice, o.averagePrice)) {
+      settled.push(key);
+    } else {
+      conflicts.push({
+        ...key,
+        action: 'edit',
+        accountName: p?.accountName ?? null,
+        yours: { shares: o.shares, averagePrice: o.averagePrice },
+        brokerage,
+      });
+    }
+  }
+  return { conflicts, settled };
+}
+
 // Newest date first; purchases without a date (synced brokerage positions) go last.
 function byDateDesc(a, b) {
   if (a.purchaseDate === b.purchaseDate) return 0;
@@ -109,4 +167,11 @@ function summarizePortfolio(rows) {
   };
 }
 
-module.exports = { validateHolding, consolidateHoldings, summarizePortfolio };
+module.exports = {
+  validateHolding,
+  validatePositionEdit,
+  applyOverrides,
+  findConflicts,
+  consolidateHoldings,
+  summarizePortfolio,
+};

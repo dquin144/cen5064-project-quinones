@@ -373,11 +373,11 @@
           <div class="error" id="shares-error"></div>
         </div>
         <div>
-          <label for="purchasePrice">Purchase price ($)</label>
+          <label for="purchasePrice" id="price-label">Purchase price ($)</label>
           <input id="purchasePrice" name="purchasePrice" type="number" step="0.01" min="0" placeholder="150.00" />
           <div class="error" id="purchasePrice-error"></div>
         </div>
-        <div>
+        <div id="date-field">
           <label for="purchaseDate">Purchase date</label>
           <input id="purchaseDate" name="purchaseDate" type="date" />
           <div class="error" id="purchaseDate-error"></div>
@@ -393,7 +393,7 @@
 
   <dialog id="manage-dialog" aria-labelledby="manage-title">
     <h2 id="manage-title">Manage holding</h2>
-    <p>Edit or remove individual purchases. Removed brokerage holdings come back the next time you sync.</p>
+    <p>Edit or remove individual purchases. Changes to brokerage holdings are kept; if they differ from your brokerage when you sync, you'll choose which to keep.</p>
     <ul class="manage-list" id="manage-list"></ul>
     <p class="error" id="manage-error" role="alert"></p>
     <div class="dialog-actions">
@@ -407,6 +407,16 @@
     <div class="dialog-actions">
       <button type="button" class="btn btn-ghost" id="confirm-cancel">Cancel</button>
       <button type="button" class="btn btn-danger" id="confirm-ok">Confirm</button>
+    </div>
+  </dialog>
+
+  <dialog id="conflict-dialog" aria-labelledby="conflict-title">
+    <h2 id="conflict-title">Your changes differ from your brokerage</h2>
+    <p>Everything else is synced. These holdings have changes you made in Folio that don't match your brokerage's latest data:</p>
+    <ul class="manage-list" id="conflict-list"></ul>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" id="conflict-brokerage">Use brokerage data</button>
+      <button type="button" class="btn btn-solid" id="conflict-keep">Keep my changes</button>
     </div>
   </dialog>
 
@@ -429,7 +439,7 @@
   const qty = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 6 });
   let brokerageConfigured = false;
   let lastPortfolio = { rows: [] };
-  let editingId = null; // id of the manual purchase being edited, or null when adding
+  let editing = null; // the holding being edited ({ id, kind, ... }), or null when adding
 
   async function api(method, url, body) {
     const res = await fetch(url, {
@@ -595,32 +605,42 @@
     }
   }
 
-  // The same form adds a holding or edits one manual purchase.
-  function resetForm(purchase = null) {
+  // The same form adds a holding, edits a manual purchase, or edits a synced
+  // holding (shares and average price only: brokerages don't report dates).
+  function resetForm(holding = null) {
     form.reset();
     showErrors({});
     $('form-error').textContent = '';
-    editingId = purchase ? purchase.id : null;
-    $('add-title').textContent = purchase ? `Edit ${purchase.ticker} purchase` : 'Add a holding';
-    $('holding-submit').textContent = purchase ? 'Save changes' : 'Add holding';
-    $('ticker').readOnly = Boolean(purchase); // change ticker = remove + add
-    if (purchase) {
-      $('ticker').value = purchase.ticker;
-      $('shares').value = purchase.shares;
-      $('purchasePrice').value = purchase.purchasePrice;
-      $('purchaseDate').value = purchase.purchaseDate;
+    editing = holding;
+    const synced = holding?.kind === 'synced';
+    $('add-title').textContent = !holding ? 'Add a holding'
+      : synced ? `Edit ${holding.ticker} (${holding.source || 'brokerage'})`
+      : `Edit ${holding.ticker} purchase`;
+    $('holding-submit').textContent = holding ? 'Save changes' : 'Add holding';
+    $('price-label').textContent = synced ? 'Average price ($)' : 'Purchase price ($)';
+    $('date-field').hidden = synced;
+    $('ticker').readOnly = Boolean(holding); // change ticker = remove + add
+    if (holding) {
+      $('ticker').value = holding.ticker;
+      $('shares').value = holding.shares;
+      $('purchasePrice').value = holding.purchasePrice;
+      $('purchaseDate').value = holding.purchaseDate ?? '';
     }
+  }
+
+  function saveRequest(body) {
+    if (!editing) return api('POST', '/api/holdings', body);
+    const base = editing.kind === 'synced' ? '/api/brokerage/positions/' : '/api/holdings/';
+    return api('PUT', base + editing.id, body);
   }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     $('form-error').textContent = '';
-    const editedTicker = editingId ? $('ticker').value : null;
+    const editedTicker = editing ? editing.ticker : null;
     let result;
     try {
-      result = editingId
-        ? await api('PUT', `/api/holdings/${editingId}`, Object.fromEntries(new FormData(form)))
-        : await api('POST', '/api/holdings', Object.fromEntries(new FormData(form)));
+      result = await saveRequest(Object.fromEntries(new FormData(form)));
     } catch {
       $('form-error').textContent = "Couldn't save. Is the server running?";
       return;
@@ -691,18 +711,17 @@
     text.textContent = `${priceLabel(h)} × ${qty(h.shares)}`;
     const sub = document.createElement('span');
     sub.className = 'sub';
-    sub.textContent = h.kind === 'synced' ? `${whenLabel(h)} · returns on next sync if removed` : whenLabel(h);
+    sub.textContent = h.edited ? `${whenLabel(h)} · edited by you` : whenLabel(h);
     text.appendChild(sub);
 
     const actions = document.createElement('span');
     actions.className = 'item-actions';
-    if (h.kind === 'manual') {
-      actions.appendChild(linkButton('Edit', '', () => {
-        $('manage-dialog').close();
-        resetForm(h);
-        $('add-dialog').showModal();
-      }));
-    }
+    actions.appendChild(linkButton('Edit', '', () => {
+      $('manage-dialog').close();
+      resetForm(h);
+      $('add-dialog').showModal();
+      $('shares').focus(); // the ticker is locked, so start where editing starts
+    }));
     actions.appendChild(linkButton('Remove', 'danger', () => removeItem(h)));
     li.append(text, actions);
     return li;
@@ -721,7 +740,7 @@
     const ok = await askConfirm(h.kind === 'synced'
       ? {
         title: `Remove ${h.ticker}?`,
-        message: `This hides ${h.ticker} from ${h.source || 'your brokerage'} in Folio. It comes back the next time you sync.`,
+        message: `This removes ${h.ticker} from ${h.source || 'your brokerage'} in Folio. When you next sync, you'll choose whether to keep it removed or restore your brokerage's data.`,
         confirmLabel: 'Remove',
       }
       : {
@@ -775,6 +794,7 @@
       if (status !== 200) throw new Error(data.error || "Couldn't sync your accounts.");
       render(data);
       setStatus(`Synced ${data.summary.accountsConnected} account(s).`);
+      if (data.conflicts?.length) showConflicts(data.conflicts);
     } catch (err) {
       setStatus(err.message || "Couldn't sync your accounts.", true);
     } finally {
@@ -783,6 +803,52 @@
   }
 
   $('sync-btn').addEventListener('click', syncAccounts);
+
+  // ---- Sync conflicts: the user's changes vs. the brokerage's data ----
+
+  const holdingText = (x) => `${qty(x.shares)} shares at ${money.format(x.averagePrice)} avg`;
+
+  function showConflicts(conflicts) {
+    const list = $('conflict-list');
+    list.replaceChildren();
+    for (const c of conflicts) {
+      const li = document.createElement('li');
+      const text = document.createElement('span');
+      text.textContent = [c.ticker, c.accountName].filter(Boolean).join(' · ');
+      const yours = document.createElement('span');
+      yours.className = 'sub';
+      yours.textContent = `You: ${c.action === 'remove' ? 'removed it' : holdingText(c.yours)}`;
+      const theirs = document.createElement('span');
+      theirs.className = 'sub';
+      theirs.textContent = `Brokerage: ${c.brokerage ? holdingText(c.brokerage) : 'no longer holds it'}`;
+      text.append(yours, theirs);
+      li.appendChild(text);
+      list.appendChild(li);
+    }
+    $('conflict-dialog').showModal();
+    $('conflict-keep').focus();
+  }
+
+  async function resolveConflicts(keepMine) {
+    $('conflict-dialog').close();
+    if (keepMine) {
+      setStatus('Synced. Your changes were kept.');
+      return; // nothing to change on the server
+    }
+    try {
+      const { status, data } = await api('POST', '/api/brokerage/conflicts', { keepMine: false });
+      if (status !== 200) throw new Error(data.error);
+      render(data);
+      setStatus("Synced. Your brokerage's data was restored for those holdings.");
+    } catch (err) {
+      setStatus(err.message || "Couldn't apply your brokerage's data.", true);
+    }
+  }
+
+  $('conflict-keep').addEventListener('click', () => resolveConflicts(true));
+  $('conflict-brokerage').addEventListener('click', () => resolveConflicts(false));
+  // Esc keeps the user's changes, the choice that loses nothing.
+  $('conflict-dialog').addEventListener('cancel', (e) => { e.preventDefault(); resolveConflicts(true); });
 
   $('disconnect-btn').addEventListener('click', async () => {
     const ok = await askConfirm({

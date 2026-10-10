@@ -1,6 +1,13 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { validateHolding, consolidateHoldings, summarizePortfolio } = require('../src/domain.js');
+const {
+  validateHolding,
+  validatePositionEdit,
+  applyOverrides,
+  findConflicts,
+  consolidateHoldings,
+  summarizePortfolio,
+} = require('../src/domain.js');
 
 const TODAY = '2026-09-28';
 const valid = { ticker: 'AAPL', shares: '10', purchasePrice: '150', purchaseDate: '2024-01-15' };
@@ -178,4 +185,40 @@ test('rows list the holdings they are made of, newest first, for editing', () =>
     { ...lot('VOO', 2, 450, '2025-02-01'), id: 2, kind: 'manual' },
   ]);
   assert.deepStrictEqual(row.holdings.map((h) => [h.kind, h.id]), [['manual', 2], ['manual', 1], ['synced', 7]]);
+});
+
+// ---- The user's changes to synced holdings ----
+
+const pos = (ticker, shares, averagePrice) => ({ accountId: 'a1', accountName: 'E*TRADE', ticker, shares, averagePrice });
+
+test('validatePositionEdit accepts shares and average price only', () => {
+  assert.deepStrictEqual(validatePositionEdit({ shares: '3', purchasePrice: '10.5' }),
+    { values: { shares: 3, averagePrice: 10.5 }, errors: {} });
+  assert.deepStrictEqual(Object.keys(validatePositionEdit({ shares: '-1', purchasePrice: 'x' }).errors).sort(),
+    ['purchasePrice', 'shares']);
+});
+
+test('applyOverrides applies edits, hides removals, leaves the rest', () => {
+  const result = applyOverrides(
+    [pos('NVDA', 25, 138), pos('VTI', 4, 200), pos('VOO', 2, 500)],
+    [
+      { accountId: 'a1', ticker: 'NVDA', action: 'edit', shares: 20, averagePrice: 140 },
+      { accountId: 'a1', ticker: 'VTI', action: 'remove' },
+    ],
+  );
+  assert.deepStrictEqual(result.map((p) => [p.ticker, p.shares, Boolean(p.edited)]), [['NVDA', 20, true], ['VOO', 2, false]]);
+});
+
+test('findConflicts separates real disagreements from settled changes', () => {
+  const { conflicts, settled } = findConflicts(
+    [pos('NVDA', 25, 138), pos('VTI', 4, 200), pos('META', 3, 587.68)],
+    [
+      { accountId: 'a1', ticker: 'NVDA', action: 'edit', shares: 20, averagePrice: 140 },    // differs: conflict
+      { accountId: 'a1', ticker: 'VTI', action: 'remove' },                                   // still held: conflict
+      { accountId: 'a1', ticker: 'SOFI', action: 'remove' },                                  // sold: settled
+      { accountId: 'a1', ticker: 'META', action: 'edit', shares: 3, averagePrice: 587.68 },   // matches: settled
+    ],
+  );
+  assert.deepStrictEqual(conflicts.map((c) => `${c.ticker}:${c.action}`), ['NVDA:edit', 'VTI:remove']);
+  assert.deepStrictEqual(settled.map((k) => k.ticker), ['SOFI', 'META']);
 });
