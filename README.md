@@ -102,7 +102,7 @@ flowchart LR
     user([Individual Investor]) -->|enters holdings, views value & gain/loss| system[Folio]
     system -->|reads accounts & positions| snaptrade[[SnapTrade API]]
     snaptrade -->|read-only access| brokerages[[Brokerages<br/>E*TRADE, Robinhood, Schwab, …]]
-    system -.->|planned: prices & news| market[[Market Data & News API<br/>PLANNED]]
+    system -.->|prices & news| market[[Market Data & News API]]
 
     classDef planned stroke-dasharray: 5 5
     class market planned
@@ -121,15 +121,15 @@ flowchart LR
         direction TB
         ui[Web UI<br/>Presentation · public/<br/>-shows holdings, value, gain/loss<br/>-collects holding entry & edits]
         service[Application Service<br/>server.js, src/service.js<br/>-orchestrates add/edit/remove<br/>-builds portfolio summary<br/>-connects & syncs brokerage]
-        domain[Domain Model<br/>src/domain.js<br/>-validates holdings<br/>-value, gain/loss, sync conflicts<br/>──────────<br/>PLANNED: risk &<br/>diversification scores]
-        data[Data Layer<br/>src/data.js, src/snaptrade.js<br/>-persists holdings & synced data<br/>-wraps SnapTrade client<br/>──────────<br/>PLANNED: market data<br/>& news clients]
+        domain[Domain Model<br/>src/domain.js<br/>-validates holdings<br/>-value, gain/loss, sync conflicts]
+        data[Data Layer<br/>src/data.js, src/snaptrade.js<br/>-persists holdings & synced data<br/>-wraps SnapTrade client]
         ui --> service --> domain
         service --> data
     end
 
     db[(Portfolio Database<br/>SQLite)]
     snaptrade[[SnapTrade API]]
-    market[[Market Data & News API<br/>PLANNED]]
+    market[[Market Data & News API]]
 
     user --> ui
     data --> db
@@ -274,7 +274,6 @@ A rough plan; the order and scope may shift as the project develops.
 
 - **Free-tier API limits** (market data, SnapTrade): cache prices and fall back to the last brokerage price.
 - **Older Node versions** can't run the app: the required version is stated above, and CI runs on Node 24.
-- **Running out of time** for news and recommendations: core metrics come first; news is dropped if behind.
 
 ## Architecture Decision Records
 
