@@ -263,12 +263,17 @@ test('changes that no longer matter are dropped quietly, without a conflict', as
   assert.strictEqual(syncedHolding('NVDA').shares, 35);
 });
 
-test('an edited holding the brokerage no longer has is a conflict', async () => {
+test('an edit to a holding the brokerage no longer has is dropped, not asked about forever', async () => {
   const fake = await connectWith([stock('NVDA', 25, 138.57)]);
   service.editBrokeragePosition(syncedHolding('NVDA').id, { shares: '20', purchasePrice: '140' });
-  brokerageNow(fake, []);
-  const { conflicts } = await service.syncBrokerage();
-  assert.deepStrictEqual(conflicts.map((c) => [c.ticker, c.brokerage]), [['NVDA', null]]);
+
+  brokerageNow(fake, []); // sold everything at the brokerage
+  assert.deepStrictEqual((await service.syncBrokerage()).conflicts, []);
+
+  // Buying it again later syncs normally, without the old edit coming back.
+  brokerageNow(fake, [stock('NVDA', 5, 190)]);
+  assert.deepStrictEqual((await service.syncBrokerage()).conflicts, []);
+  assert.deepStrictEqual([syncedHolding('NVDA').shares, syncedHolding('NVDA').edited], [5, false]);
 });
 
 test('disconnect also clears the user changes to synced holdings', async () => {

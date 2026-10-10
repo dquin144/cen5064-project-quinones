@@ -72,29 +72,26 @@ function applyOverrides(positions, overrides) {
 
 // Compares the user's changes with fresh brokerage data.
 // conflicts: changes the brokerage disagrees with; the user decides what to keep.
-// settled: changes that no longer matter (removed and also gone at the brokerage,
-// or edited to exactly the brokerage's values); safe to drop without asking.
+// settled: changes that no longer matter, safe to drop without asking: the holding
+// is gone at the brokerage (sold, so there's nothing left to remove or edit), or
+// an edit now matches the brokerage's values exactly.
 function findConflicts(positions, overrides) {
   const conflicts = [];
   const settled = [];
   for (const o of overrides) {
     const p = positions.find((x) => sameHolding(x, o));
-    const brokerage = p ? { shares: p.shares, averagePrice: p.averagePrice } : null;
     const key = { accountId: o.accountId, ticker: o.ticker };
-    if (o.action === 'remove') {
-      if (p) conflicts.push({ ...key, action: 'remove', accountName: p.accountName, yours: null, brokerage });
-      else settled.push(key);
-    } else if (p && close(p.shares, o.shares) && close(p.averagePrice, o.averagePrice)) {
+    if (!p || (o.action === 'edit' && close(p.shares, o.shares) && close(p.averagePrice, o.averagePrice))) {
       settled.push(key);
-    } else {
-      conflicts.push({
-        ...key,
-        action: 'edit',
-        accountName: p?.accountName ?? null,
-        yours: { shares: o.shares, averagePrice: o.averagePrice },
-        brokerage,
-      });
+      continue;
     }
+    conflicts.push({
+      ...key,
+      action: o.action,
+      accountName: p.accountName,
+      yours: o.action === 'edit' ? { shares: o.shares, averagePrice: o.averagePrice } : null,
+      brokerage: { shares: p.shares, averagePrice: p.averagePrice },
+    });
   }
   return { conflicts, settled };
 }

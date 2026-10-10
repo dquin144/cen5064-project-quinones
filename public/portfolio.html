@@ -820,7 +820,7 @@
       yours.textContent = `You: ${c.action === 'remove' ? 'removed it' : holdingText(c.yours)}`;
       const theirs = document.createElement('span');
       theirs.className = 'sub';
-      theirs.textContent = `Brokerage: ${c.brokerage ? holdingText(c.brokerage) : 'no longer holds it'}`;
+      theirs.textContent = `Brokerage: ${holdingText(c.brokerage)}`;
       text.append(yours, theirs);
       li.appendChild(text);
       list.appendChild(li);
