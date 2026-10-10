@@ -44,6 +44,9 @@ From the repo root after cloning:
    http://localhost:3000 and click "Get started" or "Log in" (login isn't
    implemented yet, so both go straight to the portfolio).
 
+If port 3000 is already in use, start on another port and open that port instead:
+`$env:PORT=3001; npm start` (Windows PowerShell) or `PORT=3001 npm start` (macOS/Linux).
+
 No `.env` file or API key is needed for this. Holdings are saved in a local
 SQLite database at `data/folio.db`, created automatically on first run.
 Live Server doesn't work for the portfolio page, because it needs the Node server.
