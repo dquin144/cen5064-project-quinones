@@ -33,3 +33,6 @@ coverage/
 # --- Local secrets/config (never commit credentials) ---
 .env
 *.local
+
+# --- Local database ---
+data/
