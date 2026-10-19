@@ -71,23 +71,29 @@ function matchId(pathname, prefix) {
   return /^[1-9]\d{0,15}$/.test(rest) ? Number(rest) : null;
 }
 
+// The portfolio with live prices (cached briefly, so this is cheap to call often).
+async function pricedPortfolio(fresh = false) {
+  await service.refreshPrices({ fresh });
+  return service.getPortfolio();
+}
+
 async function handle(req, res) {
-  const { pathname } = new URL(req.url, 'http://localhost');
+  const { pathname, searchParams } = new URL(req.url, 'http://localhost');
   const route = `${req.method} ${pathname}`;
 
   if (route === 'GET /api/portfolio') {
-    return sendJson(res, 200, service.getPortfolio());
+    return sendJson(res, 200, await pricedPortfolio(searchParams.get('refresh') === '1'));
   }
   if (route === 'POST /api/holdings') {
     const { errors } = service.addHolding(await readJson(req));
     if (Object.keys(errors).length > 0) return sendJson(res, 400, { errors });
-    return sendJson(res, 201, service.getPortfolio());
+    return sendJson(res, 201, await pricedPortfolio());
   }
   const holdingId = matchId(pathname, '/api/holdings/');
   if (holdingId && req.method === 'PUT') {
     const { errors } = service.updateHolding(holdingId, await readJson(req));
     if (Object.keys(errors).length > 0) return sendJson(res, 400, { errors });
-    return sendJson(res, 200, service.getPortfolio());
+    return sendJson(res, 200, await pricedPortfolio());
   }
   if (holdingId && req.method === 'DELETE') {
     service.removeHolding(holdingId);
@@ -108,7 +114,9 @@ async function handle(req, res) {
     return sendJson(res, 200, { url });
   }
   if (route === 'POST /api/brokerage/sync') {
-    return sendJson(res, 200, await service.syncBrokerage());
+    const synced = await service.syncBrokerage();
+    await service.refreshPrices(); // newly synced tickers need prices too
+    return sendJson(res, 200, { ...synced, ...service.getPortfolio() });
   }
   if (route === 'POST /api/brokerage/conflicts') {
     const { keepMine } = await readJson(req);
