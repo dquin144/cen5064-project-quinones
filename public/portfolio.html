@@ -95,6 +95,10 @@
     color: var(--ink-soft);
     margin-top: 4px;
   }
+  .prices-as-of {
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+  }
 
   /* Holdings header */
   .section-head {
@@ -324,6 +328,8 @@
       <div class="section-head">
         <h2>Holdings</h2>
         <div class="actions" id="head-actions" hidden>
+          <span class="prices-as-of" id="prices-as-of" hidden></span>
+          <button type="button" class="link-btn" id="refresh-prices-btn">Refresh prices</button>
           <button type="button" class="link-btn" id="sync-btn" hidden>Sync accounts</button>
           <button type="button" class="link-btn" id="disconnect-btn" hidden>Disconnect</button>
           <button type="button" class="btn btn-ghost" data-open="connect-dialog">Connect brokerage</button>
@@ -520,7 +526,8 @@
     }
   }
 
-  const NO_PRICE_TITLE = 'No market price yet. Prices come from connected brokerages for now.';
+  const NO_PRICE_TITLE = "No market price found for this ticker. Try \"Refresh prices\".";
+  const PRICE_POLL_MS = 60 * 1000;
 
   function moneyCell(tr, amount) {
     if (amount === null) {
@@ -539,6 +546,11 @@
     const anyPriced = summary.unpricedCount < summary.holdingsCount;
     $('total-value').textContent = anyPriced ? money.format(summary.totalValue) : '—';
     renderGainLoss(summary);
+    const asOf = portfolio.pricesAsOf ? new Date(portfolio.pricesAsOf) : null;
+    $('prices-as-of').textContent = asOf
+      ? `Prices as of ${asOf.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+      : '';
+    $('prices-as-of').hidden = !asOf;
     $('holdings-count').textContent = summary.holdingsCount;
     $('accounts-count').textContent = summary.accountsConnected;
 
@@ -569,15 +581,34 @@
     $('disconnect-btn').hidden = summary.accountsConnected === 0;
   }
 
-  async function loadPortfolio() {
+  // fresh: true asks the server to skip its price cache. quiet: true (background
+  // polling) doesn't report failures; the next poll tries again.
+  async function loadPortfolio({ fresh = false, quiet = false } = {}) {
     try {
-      const { status, data } = await api('GET', '/api/portfolio');
+      const { status, data } = await api('GET', fresh ? '/api/portfolio?refresh=1' : '/api/portfolio');
       if (status !== 200) throw new Error(data.error);
       render(data);
+      return true;
     } catch {
-      setStatus("Couldn't load your portfolio. Is the server running? (npm start)", true);
+      if (!quiet) setStatus("Couldn't load your portfolio. Is the server running? (npm start)", true);
+      return false;
     }
   }
+
+  $('refresh-prices-btn').addEventListener('click', async () => {
+    $('refresh-prices-btn').disabled = true;
+    setStatus('Refreshing prices…');
+    if (await loadPortfolio({ fresh: true })) setStatus('');
+    $('refresh-prices-btn').disabled = false;
+  });
+
+  // Keep prices current while the page is visible. Skipped while a dialog is open
+  // so the table doesn't change under the user mid-edit.
+  setInterval(() => {
+    if (document.visibilityState === 'visible' && !document.querySelector('dialog[open]')) {
+      loadPortfolio({ quiet: true });
+    }
+  }, PRICE_POLL_MS);
 
   // ---- Dialogs ----
 

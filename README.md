@@ -21,7 +21,7 @@ their portfolio without building spreadsheets.
 |---|----------|--------|
 | UC1 | **Build and maintain a portfolio by hand:** add a holding (ticker, shares, purchase price, purchase date), edit or remove it; invalid input is rejected | ✅ Working |
 | UC2 | **Import holdings from a brokerage:** connect a brokerage read-only (E*TRADE, Robinhood, Schwab, Fidelity, …), sync and disconnect | ✅ Working |
-| UC3 | **See how the portfolio is doing:** total value, gain/loss, allocation, diversification and concentration scores | 🟡 Value and gain/loss working; allocation and scores planned |
+| UC3 | **See how the portfolio is doing:** total value, gain/loss, allocation, diversification and concentration scores | 🟡 Live prices, value and gain/loss working; allocation and scores planned |
 | UC4 | **Get news and recommendations for my holdings:** rule-based insights and news matched to what the user owns | ⏳ Planned |
 
 **Scope:** Folio runs locally for a single user, covers US stocks and ETFs, and
@@ -49,6 +49,13 @@ If port 3000 is already in use, start on another port and open that port instead
 
 No `.env` file or API key is needed for this. Holdings are saved in a local
 SQLite database at `data/folio.db`, created automatically on first run.
+
+**Live prices** come from Yahoo Finance and need no key. They refresh every
+minute while the page is open, or right away with **Refresh prices**. If
+Yahoo can't price a ticker, Folio tries Finnhub when `FINNHUB_API_KEY` is set
+in `.env` (free key at https://finnhub.io), then the brokerage's last price.
+If none of these has a price, the holding shows "—" and is left out of the
+totals.
 Live Server doesn't work for the portfolio page, because it needs the Node server.
 
 **Try the core use case (UC1):** click **Add holding** and enter
@@ -88,14 +95,14 @@ Four tiers, each with its own files:
 | **Presentation** | `public/index.html`, `public/portfolio.html` | Landing page; portfolio dashboard (summary tiles, holdings table, purchase history); dialogs to add, edit and remove holdings, connect a brokerage, and resolve sync conflicts. Sends input to the server as JSON and renders the result. **No business rules and no storage access.** |
 | **Service** | `server.js` (HTTP entry), `src/service.js` | Orchestrates each use case: add/edit/remove a holding, build the portfolio view, connect/sync/disconnect a brokerage, resolve sync conflicts. Asks the Domain to decide and the Data tier to load and save. `server.js` only parses requests and maps results and errors to HTTP status codes. |
 | **Domain** | `src/domain.js` | The rules, as pure functions: what makes a holding valid (ticker format, shares and price > 0, date not in the future); merging purchases into one row per ticker; value, total value and gain/loss; applying the user's changes to synced holdings and detecting conflicts with fresh brokerage data. No I/O. *Planned:* allocation, diversification score, rule-based insights, matching news to holdings. |
-| **Data** | `src/data.js`, `src/snaptrade.js` | `data.js`: all SQLite access (holdings, brokerage accounts, positions, buy history, the user's changes to synced holdings). `snaptrade.js`: the only code that reads the SnapTrade keys or calls SnapTrade; converts its data into Folio's shape. *Planned:* `prices.js` and `news.js`, clients for a market data and news API (e.g. Finnhub). |
+| **Data** | `src/data.js`, `src/snaptrade.js`, `src/prices.js` | `data.js`: all SQLite access (holdings, brokerage accounts, positions, buy history, the user's changes to synced holdings). `snaptrade.js`: the only code that reads the SnapTrade keys or calls SnapTrade; converts its data into Folio's shape. `prices.js`: the only code that fetches market prices (Yahoo Finance, with Finnhub as a backup), with a one-minute cache. *Planned:* `news.js`, a client for a news API. |
 
 **Dependency rule:** dependencies point one way: Presentation → Service →
 Domain, and Service → Data. The Domain depends on nothing (it imports no other
 module), the Data tier never calls up into Service or Domain, and the
 Presentation tier reaches the server only over HTTP. In code this is visible
 in the `require` calls: `server.js` imports only `service.js`; `service.js`
-imports `domain.js`, `data.js` and `snaptrade.js`; `domain.js` imports nothing.
+imports `domain.js`, `data.js`, `snaptrade.js` and `prices.js`; `domain.js` imports nothing.
 
 ### C4 — Context
 
@@ -105,10 +112,11 @@ flowchart LR
     user([Individual Investor]) -->|enters holdings, views value & gain/loss| system[Folio]
     system -->|reads accounts & positions| snaptrade[[SnapTrade API]]
     snaptrade -->|read-only access| brokerages[[Brokerages<br/>E*TRADE, Robinhood, Schwab, …]]
-    system -.->|prices & news| market[[Market Data & News API]]
+    system -->|live prices| market[[Market Data API<br/>Yahoo Finance, Finnhub]]
+    system -.->|news| news[[News API]]
 
     classDef planned stroke-dasharray: 5 5
-    class market planned
+    class news planned
 ```
 
 *Dashed boxes and lines = planned (not built yet).*
@@ -125,22 +133,24 @@ flowchart LR
         ui[Web UI<br/>Presentation · public/<br/>-shows holdings, value, gain/loss<br/>-collects holding entry & edits]
         service[Application Service<br/>server.js, src/service.js<br/>-orchestrates add/edit/remove<br/>-builds portfolio summary<br/>-connects & syncs brokerage]
         domain[Domain Model<br/>src/domain.js<br/>-validates holdings<br/>-value, gain/loss, sync conflicts]
-        data[Data Layer<br/>src/data.js, src/snaptrade.js<br/>-persists holdings & synced data<br/>-wraps SnapTrade client]
+        data[Data Layer<br/>src/data.js, src/snaptrade.js, src/prices.js<br/>-persists holdings & synced data<br/>-wraps SnapTrade and price clients]
         ui --> service --> domain
         service --> data
     end
 
     db[(Portfolio Database<br/>SQLite)]
     snaptrade[[SnapTrade API]]
-    market[[Market Data & News API]]
+    market[[Market Data API<br/>Yahoo Finance, Finnhub]]
+    news[[News API]]
 
     user --> ui
     data --> db
     data --> snaptrade
-    data -.-> market
+    data --> market
+    data -.-> news
 
     classDef planned stroke-dasharray: 5 5
-    class market planned
+    class news planned
 ```
 
 *Dashed boxes and lines = planned (not built yet).*

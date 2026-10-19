@@ -1,5 +1,5 @@
 // Service tier: orchestrates user actions — asks Domain to decide, Data to store,
-// and the SnapTrade client to talk to brokerages.
+// the SnapTrade client to talk to brokerages, and the price client for market prices.
 
 const crypto = require('node:crypto');
 const {
@@ -12,9 +12,13 @@ const {
 } = require('./domain');
 const data = require('./data');
 const snaptrade = require('./snaptrade');
+const prices = require('./prices');
 
 // Single built-in user until real login exists.
 const APP_USER_ID = 'local';
+
+// Latest live quotes (ticker -> { price, asOf, source }), filled by refreshPrices().
+let latestQuotes = new Map();
 
 class NotConfiguredError extends Error {
   constructor() {
@@ -79,10 +83,23 @@ function resolveSyncConflicts(keepMine) {
   return getPortfolio();
 }
 
+// Fetches live prices for every ticker the user holds. Never throws: tickers that
+// can't be priced fall back to the brokerage's price, or show no price.
+// fresh: true skips the price cache (the "Refresh prices" button).
+async function refreshPrices({ fresh = false } = {}) {
+  const tickers = [
+    ...data.loadHoldings().map((h) => h.ticker),
+    ...data.loadBrokeragePositions(APP_USER_ID).map((p) => p.ticker),
+  ];
+  latestQuotes = await prices.getQuotes(tickers, { fresh });
+}
+
 function getPortfolio() {
-  const manual = data.loadHoldings().map((h) => ({ ...h, kind: 'manual' }));
+  const livePrice = (ticker) => latestQuotes.get(ticker.toUpperCase())?.price ?? null;
+  const manual = data.loadHoldings().map((h) => ({ ...h, kind: 'manual', currentPrice: livePrice(h.ticker) }));
   // Synced positions (with the user's changes applied) become undated purchases at
-  // their average cost, labeled with their account.
+  // their average cost, labeled with their account. A live price beats the
+  // brokerage's last price.
   const positions = applyOverrides(data.loadBrokeragePositions(APP_USER_ID), data.loadOverrides(APP_USER_ID));
   const synced = positions.map((p) => ({
     id: p.id,
@@ -93,7 +110,7 @@ function getPortfolio() {
     purchasePrice: p.averagePrice,
     purchaseDate: null,
     source: p.accountName,
-    currentPrice: p.price,
+    currentPrice: livePrice(p.ticker) ?? p.price,
   }));
   const buys = data.loadBrokerageBuys(APP_USER_ID).map((b) => ({
     ticker: b.ticker,
@@ -103,8 +120,11 @@ function getPortfolio() {
     source: b.accountName,
   }));
   const rows = consolidateHoldings([...manual, ...synced], buys);
+  // Oldest live quote shown, so the page can say "Prices as of ...".
+  const asOfs = rows.map((r) => latestQuotes.get(r.ticker)?.asOf).filter(Boolean).sort();
   return {
     rows,
+    pricesAsOf: asOfs[0] ?? null,
     summary: { ...summarizePortfolio(rows), accountsConnected: data.countBrokerageAccounts(APP_USER_ID) },
     brokerageConfigured: snaptrade.isConfigured(),
   };
@@ -153,6 +173,7 @@ module.exports = {
   editBrokeragePosition,
   removeBrokeragePosition,
   resolveSyncConflicts,
+  refreshPrices,
   getPortfolio,
   startBrokerageConnection,
   syncBrokerage,
