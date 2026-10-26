@@ -20,6 +20,22 @@ const APP_USER_ID = 'local';
 // Latest live quotes (ticker -> { price, asOf, source }), filled by refreshPrices().
 let latestQuotes = new Map();
 
+// Message from the last SnapTrade failure, shown on the page until a SnapTrade
+// request works again. Everything else in Folio keeps working meanwhile.
+let brokerageIssue = null;
+
+// Runs a SnapTrade request, remembering whether SnapTrade is currently failing.
+async function brokerage(request) {
+  try {
+    const result = await request();
+    brokerageIssue = null;
+    return result;
+  } catch (err) {
+    if (err instanceof snaptrade.BrokerageApiError) brokerageIssue = err.message;
+    throw err;
+  }
+}
+
 class NotConfiguredError extends Error {
   constructor() {
     super("Brokerage connection isn't set up. Add SnapTrade keys to .env and restart the server.");
@@ -127,6 +143,7 @@ function getPortfolio() {
     pricesAsOf: asOfs[0] ?? null,
     summary: { ...summarizePortfolio(rows), accountsConnected: data.countBrokerageAccounts(APP_USER_ID) },
     brokerageConfigured: snaptrade.isConfigured(),
+    brokerageIssue,
   };
 }
 
@@ -135,17 +152,18 @@ async function startBrokerageConnection(redirectUrl) {
   if (!snaptrade.isConfigured()) throw new NotConfiguredError();
   let user = data.getBrokerageUser(APP_USER_ID);
   if (!user) {
-    user = await snaptrade.registerUser(`folio-${crypto.randomUUID()}`);
+    user = await brokerage(() => snaptrade.registerUser(`folio-${crypto.randomUUID()}`));
     data.saveBrokerageUser(APP_USER_ID, user);
   }
-  return snaptrade.getConnectionUrl(user, redirectUrl);
+  return brokerage(() => snaptrade.getConnectionUrl(user, redirectUrl));
 }
 
 async function syncBrokerage() {
   if (!snaptrade.isConfigured()) throw new NotConfiguredError();
   const user = data.getBrokerageUser(APP_USER_ID);
   if (!user) throw new NotConnectedError();
-  const { accounts, positions, buys } = await snaptrade.fetchAccountsAndPositions(user);
+  // If SnapTrade fails here, nothing is replaced: the last synced holdings stay.
+  const { accounts, positions, buys } = await brokerage(() => snaptrade.fetchAccountsAndPositions(user));
   data.replaceBrokerageData(APP_USER_ID, accounts, positions, buys);
 
   // Holdings the user hasn't changed are now up to date. For the ones they have,
@@ -160,7 +178,7 @@ async function syncBrokerage() {
 async function disconnectBrokerage() {
   if (!snaptrade.isConfigured()) throw new NotConfiguredError();
   const user = data.getBrokerageUser(APP_USER_ID);
-  if (user) await snaptrade.disconnectAll(user);
+  if (user) await brokerage(() => snaptrade.disconnectAll(user));
   data.replaceBrokerageData(APP_USER_ID, [], []);
   data.deleteOverrides(APP_USER_ID);
   return getPortfolio();

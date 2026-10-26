@@ -151,6 +151,15 @@
     margin: 0 0 16px;
   }
   .status.error { color: var(--error); }
+  /* Shown while SnapTrade is failing; the rest of the page keeps working. */
+  .notice {
+    font-size: 0.9rem;
+    color: var(--error);
+    border: 1px solid var(--error);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 0 0 16px;
+  }
 
   /* Empty state */
   .empty {
@@ -322,6 +331,7 @@
       </div>
     </section>
 
+    <p class="notice" id="brokerage-notice" role="status" hidden></p>
     <p class="status" id="status" role="status" hidden></p>
 
     <section class="card">
@@ -462,6 +472,12 @@
     $('status').hidden = !text;
   }
 
+  // The SnapTrade notice already explains SnapTrade failures, so don't repeat it.
+  function reportError(err, fallback) {
+    if (err.message && err.message === lastPortfolio.brokerageIssue) return setStatus('');
+    setStatus(err.message || fallback, true);
+  }
+
   // ---- Rendering ----
 
   function cell(tr, content, cls) {
@@ -542,6 +558,8 @@
     const { rows, summary } = portfolio;
     lastPortfolio = portfolio;
     brokerageConfigured = Boolean(portfolio.brokerageConfigured);
+    $('brokerage-notice').textContent = portfolio.brokerageIssue || '';
+    $('brokerage-notice').hidden = !portfolio.brokerageIssue;
 
     const anyPriced = summary.unpricedCount < summary.holdingsCount;
     $('total-value').textContent = anyPriced ? money.format(summary.totalValue) : '—';
@@ -809,6 +827,7 @@
     $('connect-error').textContent = '';
     try {
       const { status, data } = await api('POST', '/api/brokerage/connect');
+      if (data.portfolio) render(data.portfolio);
       if (status !== 200 || !data.url) throw new Error(data.error || "Couldn't start the connection.");
       window.location.href = data.url;
     } catch (err) {
@@ -822,12 +841,13 @@
     $('sync-btn').disabled = true;
     try {
       const { status, data } = await api('POST', '/api/brokerage/sync');
+      if (data.portfolio) render(data.portfolio);
       if (status !== 200) throw new Error(data.error || "Couldn't sync your accounts.");
       render(data);
       setStatus(`Synced ${data.summary.accountsConnected} account(s).`);
       if (data.conflicts?.length) showConflicts(data.conflicts);
     } catch (err) {
-      setStatus(err.message || "Couldn't sync your accounts.", true);
+      reportError(err, "Couldn't sync your accounts.");
     } finally {
       $('sync-btn').disabled = false;
     }
@@ -892,11 +912,12 @@
     $('disconnect-btn').disabled = true;
     try {
       const { status, data } = await api('POST', '/api/brokerage/disconnect');
+      if (data.portfolio) render(data.portfolio);
       if (status !== 200) throw new Error(data.error || "Couldn't disconnect.");
       render(data);
       setStatus('Brokerage disconnected. SnapTrade no longer has access to your accounts.');
     } catch (err) {
-      setStatus(err.message || "Couldn't disconnect.", true);
+      reportError(err, "Couldn't disconnect.");
     } finally {
       $('disconnect-btn').disabled = false;
     }

@@ -6,8 +6,26 @@ const { Snaptrade, SnaptradeAuth } = require('snaptrade-typescript-sdk');
 // Instrument kinds Folio can show as holdings; options, crypto, etc. are skipped for now.
 const SUPPORTED_KINDS = new Set(['stock', 'etf', 'mutualfund']);
 
-// SnapTrade itself failed (bad keys, brokerage down, ...). The server reports these as 502.
-class BrokerageApiError extends Error {}
+// How long to wait on SnapTrade before treating it as down.
+const REQUEST_TIMEOUT_MS = 15_000;
+
+// Network error codes that mean SnapTrade couldn't be reached at all.
+const UNREACHABLE_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'ECONNABORTED', 'ERR_NETWORK']);
+
+const UNAVAILABLE_MSG = "SnapTrade isn't responding right now, so brokerage sync is paused. "
+  + 'Your manual holdings still work, and synced holdings show their last synced numbers. Try again later.';
+const USER_LIMIT_MSG = "SnapTrade's free plan allows only one connected user, and that spot is already taken. "
+  + 'You can keep adding holdings by hand.';
+
+// SnapTrade itself failed. reason is 'unavailable' (down, unreachable, timed out),
+// 'user-limit' (the plan's user limit is reached), or 'rejected' (anything else,
+// e.g. bad keys). The server reports these as 502.
+class BrokerageApiError extends Error {
+  constructor(message, reason = 'rejected') {
+    super(message);
+    this.reason = reason;
+  }
+}
 
 let client = null;
 
@@ -31,13 +49,33 @@ function setClientForTests(fake) {
   client = fake;
 }
 
-// Turns an SDK error into a readable message for the UI.
+// Turns an SDK error (or our timeout) into a BrokerageApiError with a readable message.
+function toBrokerageError(err) {
+  if (err instanceof BrokerageApiError) return err;
+  const detail = String(err.responseBody?.detail || err.responseBody?.message || err.message || '');
+  // SnapTrade doesn't document the exact wording, so match on what such an error would say.
+  if (/limit|maximum|quota|exceed/i.test(detail) && /user/i.test(detail)) {
+    return new BrokerageApiError(USER_LIMIT_MSG, 'user-limit');
+  }
+  const unreachable = err.status === undefined && UNREACHABLE_CODES.has(err.code);
+  if (unreachable || err.status >= 500 || err.status === 429 || /rate limit/i.test(detail)) {
+    return new BrokerageApiError(UNAVAILABLE_MSG, 'unavailable');
+  }
+  // The SDK appends response headers to its message; keep only the first line.
+  return new BrokerageApiError(`SnapTrade request failed: ${detail.split('\n')[0]}`);
+}
+
 async function call(request) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new BrokerageApiError(UNAVAILABLE_MSG, 'unavailable')), REQUEST_TIMEOUT_MS);
+  });
   try {
-    return (await request()).data;
+    return (await Promise.race([request(), timeout])).data;
   } catch (err) {
-    const detail = err.responseBody?.detail || err.responseBody?.message || err.message;
-    throw new BrokerageApiError(`SnapTrade request failed: ${detail}`);
+    throw toBrokerageError(err);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
