@@ -141,9 +141,11 @@ const server = http.createServer((req, res) => {
     if (err instanceof service.NotFoundError) {
       return sendJson(res, 404, { error: err.message, portfolio: service.getPortfolio() });
     }
+    // SnapTrade failing doesn't stop the rest of Folio: send the portfolio so the
+    // page keeps showing manual holdings and the last synced data.
     if (err instanceof service.BrokerageApiError) {
-      console.error(err.message);
-      return sendJson(res, 502, { error: err.message });
+      console.error(`SnapTrade (${err.reason}): ${err.message}`);
+      return sendJson(res, 502, { error: err.message, reason: err.reason, portfolio: service.getPortfolio() });
     }
     console.error(err);
     sendJson(res, 500, { error: 'Something went wrong on the server.' });
