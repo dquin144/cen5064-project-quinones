@@ -79,12 +79,18 @@ function migrate(db) {
 }
 
 let db = null;
+let dbFile = null;
+
+// Called once at startup (server.js) or by a test, before any database access.
+function configure(config) {
+  dbFile = config.dbFile;
+}
 
 function getDb() {
   if (db) return db;
-  const file = process.env.DB_FILE || path.join(__dirname, '..', 'data', 'folio.db');
-  if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
-  db = new DatabaseSync(file);
+  if (!dbFile) throw new Error('data.configure() must be called before using the database.');
+  if (dbFile !== ':memory:') fs.mkdirSync(path.dirname(dbFile), { recursive: true });
+  db = new DatabaseSync(dbFile);
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
   migrate(db);
@@ -255,6 +261,7 @@ function countBrokerageAccounts(appUserId) {
 }
 
 module.exports = {
+  configure,
   loadHoldings,
   saveHolding,
   updateHolding,

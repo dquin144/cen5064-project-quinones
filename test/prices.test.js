@@ -1,10 +1,12 @@
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert');
 
-process.env.DB_FILE = ':memory:';
+const { loadConfig } = require('../src/config.js');
 const data = require('../src/data.js');
 const prices = require('../src/prices.js');
 const service = require('../src/service.js');
+
+data.configure(loadConfig({ DB_FILE: ':memory:' }));
 
 // Stands in for fetch. routes: (url) -> JSON body, or an Error to fail the request.
 // Records every URL requested.
@@ -27,7 +29,7 @@ const isYahoo = (url) => url.includes('yahoo');
 beforeEach(() => {
   data.closeDb();
   prices.clearCacheForTests();
-  delete process.env.FINNHUB_API_KEY;
+  prices.configure(loadConfig());
 });
 
 // ---- Price client ----
@@ -47,7 +49,7 @@ test('never calls Finnhub without a key', async () => {
 });
 
 test('falls back to Finnhub when Yahoo fails and a key is set', async () => {
-  process.env.FINNHUB_API_KEY = 'test-key';
+  prices.configure(loadConfig({ FINNHUB_API_KEY: 'test-key' }));
   prices.setFetchForTests(fakeFetch((url) => (isYahoo(url) ? new Error('down') : finnhub(99.25))));
   const quotes = await prices.getQuotes(['MSFT']);
   assert.strictEqual(quotes.get('MSFT').price, 99.25);
@@ -55,7 +57,7 @@ test('falls back to Finnhub when Yahoo fails and a key is set', async () => {
 });
 
 test('Finnhub price 0 means unknown ticker, so it is left out', async () => {
-  process.env.FINNHUB_API_KEY = 'test-key';
+  prices.configure(loadConfig({ FINNHUB_API_KEY: 'test-key' }));
   prices.setFetchForTests(fakeFetch((url) => (isYahoo(url) ? new Error('down') : finnhub(0))));
   assert.strictEqual((await prices.getQuotes(['NOPE'])).size, 0);
 });
