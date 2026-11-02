@@ -1,13 +1,15 @@
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert');
 
-process.env.DB_FILE = ':memory:';
-const { closeDb } = require('../src/data.js');
+const { loadConfig } = require('../src/config.js');
+const data = require('../src/data.js');
 const service = require('../src/service.js');
+
+data.configure(loadConfig({ DB_FILE: ':memory:' }));
 
 const valid = { ticker: 'AAPL', shares: '10', purchasePrice: '150', purchaseDate: '2024-01-15' };
 
-beforeEach(() => closeDb());
+beforeEach(() => data.closeDb());
 
 test('starts with an empty portfolio', () => {
   const { rows, summary } = service.getPortfolio();
@@ -49,7 +51,6 @@ test('adds the price column to a database created before it existed', () => {
   const os = require('node:os');
   const path = require('node:path');
   const { DatabaseSync } = require('node:sqlite');
-  const data = require('../src/data.js');
 
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'folio-')), 'old.db');
   const old = new DatabaseSync(file);
@@ -59,14 +60,14 @@ test('adds the price column to a database created before it existed', () => {
             INSERT INTO brokerage_positions VALUES ('a1', 'VTI', 3, 200);`);
   old.close();
 
-  closeDb();
-  process.env.DB_FILE = file;
+  data.closeDb();
+  data.configure(loadConfig({ DB_FILE: file }));
   try {
     assert.deepStrictEqual(data.loadBrokeragePositions('local'),
       [{ id: 1, accountId: 'a1', ticker: 'VTI', shares: 3, averagePrice: 200, price: null, accountName: 'Old Account' }]);
   } finally {
-    closeDb();
-    process.env.DB_FILE = ':memory:';
+    data.closeDb();
+    data.configure(loadConfig({ DB_FILE: ':memory:' }));
   }
 });
 

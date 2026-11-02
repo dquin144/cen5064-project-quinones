@@ -1,4 +1,4 @@
-// Data tier (external API client): the only file that reads the SnapTrade keys
+// Data tier (external API client): the only file that uses the SnapTrade keys
 // and talks to SnapTrade. Converts SnapTrade's data into Folio's shape.
 
 const { Snaptrade, SnaptradeAuth } = require('snaptrade-typescript-sdk');
@@ -28,17 +28,24 @@ class BrokerageApiError extends Error {
 }
 
 let client = null;
+let keys = { clientId: null, consumerKey: null };
+
+// Called once at startup (server.js) or by a test. New keys need a new SDK client.
+function configure(config) {
+  keys = config.snaptrade;
+  client = null;
+}
 
 function isConfigured() {
-  return Boolean(process.env.SNAPTRADE_CLIENT_ID && process.env.SNAPTRADE_CONSUMER_KEY);
+  return Boolean(keys.clientId && keys.consumerKey);
 }
 
 function getClient() {
   if (!client) {
     client = new Snaptrade({
       auth: SnaptradeAuth.commercialApiKey({
-        clientId: process.env.SNAPTRADE_CLIENT_ID,
-        consumerKey: process.env.SNAPTRADE_CONSUMER_KEY,
+        clientId: keys.clientId,
+        consumerKey: keys.consumerKey,
       }),
     });
   }
@@ -186,6 +193,7 @@ async function disconnectAll(user) {
 }
 
 module.exports = {
+  configure,
   isConfigured,
   registerUser,
   getConnectionUrl,

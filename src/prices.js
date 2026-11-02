@@ -7,7 +7,13 @@ const CACHE_MS = 60 * 1000;
 const TIMEOUT_MS = 5000;
 
 let fetchImpl = (...args) => fetch(...args);
+let finnhubApiKey = null;
 const cache = new Map(); // ticker -> { price, asOf, source, fetchedAt }
+
+// Called once at startup (server.js) or by a test.
+function configure(config) {
+  finnhubApiKey = config.finnhubApiKey;
+}
 
 function setFetchForTests(fake) {
   fetchImpl = fake;
@@ -39,9 +45,8 @@ async function fromYahoo(ticker) {
 
 // Finnhub returns c = 0 for symbols it doesn't know.
 async function fromFinnhub(ticker) {
-  const key = process.env.FINNHUB_API_KEY;
   const body = await getJson(
-    `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(ticker)}&token=${encodeURIComponent(key)}`);
+    `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(ticker)}&token=${encodeURIComponent(finnhubApiKey)}`);
   const price = Number(body.c);
   if (!(price > 0)) throw new Error('no price');
   return { price, asOf: isoFromSeconds(body.t), source: 'finnhub' };
@@ -51,7 +56,7 @@ async function fetchQuote(ticker) {
   try {
     return await fromYahoo(ticker);
   } catch (yahooErr) {
-    if (!process.env.FINNHUB_API_KEY) throw yahooErr;
+    if (!finnhubApiKey) throw yahooErr;
     return fromFinnhub(ticker);
   }
 }
@@ -87,4 +92,4 @@ async function getQuotes(tickers, { fresh = false } = {}) {
   return new Map([...quotes].map(([t, { price, asOf, source }]) => [t, { price, asOf, source }]));
 }
 
-module.exports = { getQuotes, setFetchForTests, clearCacheForTests };
+module.exports = { configure, getQuotes, setFetchForTests, clearCacheForTests };
