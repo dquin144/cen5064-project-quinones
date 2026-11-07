@@ -19,6 +19,7 @@
   }
 
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
 
   body {
     margin: 0;
@@ -229,8 +230,9 @@
   <nav class="wrap">
     <div class="logo">Folio</div>
     <div class="nav-actions">
-      <a href="portfolio.html" class="btn btn-ghost">Log in</a>
-      <a href="portfolio.html" class="btn btn-solid">Get started</a>
+      <a href="login.html" class="btn btn-ghost" data-guest>Log in</a>
+      <a href="login.html?mode=signup" class="btn btn-solid" data-guest>Get started</a>
+      <a href="portfolio.html" class="btn btn-solid" data-member hidden>Open portfolio</a>
     </div>
   </nav>
 
@@ -239,8 +241,9 @@
       <h1>Smarter insights for smarter investing.</h1>
       <p>Get a clearer view of your investments with intelligent portfolio analysis and actionable recommendations.</p>
       <div class="hero-actions">
-        <a href="portfolio.html" class="btn btn-solid">Get started</a>
-        <a href="portfolio.html" class="btn btn-ghost">Log in</a>
+        <a href="login.html?mode=signup" class="btn btn-solid" data-guest>Get started</a>
+        <a href="login.html" class="btn btn-ghost" data-guest>Log in</a>
+        <a href="portfolio.html" class="btn btn-solid" data-member hidden>Open your portfolio</a>
       </div>
     </div>
 
@@ -280,5 +283,17 @@
     </div>
   </footer>
 
+<script>
+  // Logged in already: swap "Log in / Get started" for a link to the portfolio.
+  // Opened as a file (no server), the links just stay as they are.
+  fetch('/api/auth/me')
+    .then((r) => r.json())
+    .then(({ user }) => {
+      if (!user) return;
+      document.querySelectorAll('[data-guest]').forEach((el) => { el.hidden = true; });
+      document.querySelectorAll('[data-member]').forEach((el) => { el.hidden = false; });
+    })
+    .catch(() => {});
+</script>
 </body>
 </html>

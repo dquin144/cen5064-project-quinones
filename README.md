@@ -23,8 +23,9 @@ their portfolio without building spreadsheets.
 | UC2 | **Import holdings from a brokerage:** connect a brokerage read-only (E*TRADE, Robinhood, Schwab, Fidelity, …), sync and disconnect | ✅ Working |
 | UC3 | **See how the portfolio is doing:** total value, gain/loss, allocation, diversification and concentration scores | ✅ Working |
 | UC4 | **Get news and recommendations for my holdings:** rule-based insights and news matched to what the user owns | ✅ Working |
+| UC5 | **Have my own account:** sign up and log in with a username and password; each account sees only its own portfolio; log out | ✅ Working |
 
-**Scope:** Folio runs locally for a single user, covers US stocks and ETFs, and
+**Scope:** Folio runs locally (one server, several accounts), covers US stocks and ETFs, and
 only reads brokerage data (no trading). Connecting a brokerage was only a
 "maybe" in the original proposal; it was added early because it is the easiest
 way to fill a portfolio.
@@ -40,15 +41,21 @@ From the repo root after cloning:
 1. **Install dependencies:** `npm install`
 2. **Run the tests:** `npm test`
 3. **Start the app:** `npm start` (stop it with Ctrl+C)
-4. **Open the portfolio page:** http://localhost:3000/portfolio.html, or open
-   http://localhost:3000 and click "Get started" or "Log in" (login isn't
-   implemented yet, so both go straight to the portfolio).
+4. **Open Folio:** http://localhost:3000 and click **Get started** to create an
+   account (username and password), or **Log in** if you have one. You land on
+   your portfolio; the account button in the top right shows who's logged in
+   and has **Log out**. Opening http://localhost:3000/portfolio.html while
+   logged out sends you to the login page first.
 
 If port 3000 is already in use, start on another port and open that port instead:
 `$env:PORT=3001; npm start` (Windows PowerShell) or `PORT=3001 npm start` (macOS/Linux).
 
-No `.env` file or API key is needed for this. Holdings are saved in a local
-SQLite database at `data/folio.db`, created automatically on first run.
+No `.env` file or API key is needed for this. Accounts and holdings are saved
+in a local SQLite database at `data/folio.db`, created automatically on first
+run. Each account has its own portfolio. If you used Folio before accounts
+existed, the **first account you create takes over those holdings** (and any
+connected brokerage), so nothing is lost. Passwords are stored only as salted
+scrypt hashes; you stay logged in for 7 days unless you log out.
 
 **Live prices** come from Yahoo Finance and need no key. They refresh every
 minute while the page is open, or right away with **Refresh prices**. If
@@ -134,17 +141,18 @@ Four tiers, each with its own files:
 
 | Tier | Files | Responsibilities in Folio |
 |------|-------|---------------------------|
-| **Presentation** | `public/index.html`, `public/portfolio.html` | Landing page; portfolio dashboard (summary tiles, then Holdings, Recommendations and News tabs; holdings table, purchase history); dialogs to add, edit and remove holdings, connect a brokerage, and resolve sync conflicts. Sends input to the server as JSON and renders the result. **No business rules and no storage access.** |
-| **Service** | `server.js` (HTTP entry), `src/service.js`, `src/config.js` | Orchestrates each use case: add/edit/remove a holding, build the portfolio view, connect/sync/disconnect a brokerage, resolve sync conflicts, build recommendations and the written summary. Asks the Domain to decide and the Data tier to load and save. `server.js` only parses requests and maps results and errors to HTTP status codes. `config.js` reads the settings from the environment once; `server.js` hands them down through `service.configure()`. |
-| **Domain** | `src/domain.js`, `src/insights.js`, `src/advice.js` | The rules, as pure functions. `domain.js`: what makes a holding valid (ticker format, shares and price > 0, date not in the future); merging purchases into one row per ticker; value, total value and gain/loss (per holding and overall); allocation by ticker; applying the user's changes to synced holdings and detecting conflicts with fresh brokerage data. `insights.js`: the diversification score and concentration risk; headline sentiment; deciding which news is about which holding; the recommendation rules. `advice.js`: the facts given to the AI model, the checks on what it writes, and the rules-only summary. No I/O. |
-| **Data** | `src/data.js`, `src/snaptrade.js`, `src/prices.js`, `src/news.js`, `src/claude.js` | `data.js`: all SQLite access (holdings, brokerage accounts, positions, buy history, the user's changes to synced holdings). `snaptrade.js`: the only code that uses the SnapTrade keys or calls SnapTrade; converts its data into Folio's shape. `prices.js`: the only code that fetches market prices (Yahoo Finance, with Finnhub as a backup), with a one-minute cache. `news.js`: the only code that fetches news (Finnhub company news, with Yahoo Finance as a backup), with a 15-minute cache. `claude.js`: the only code that calls the Claude API (optional), with a 6-hour cache per set of facts. |
+| **Presentation** | `public/index.html`, `public/login.html`, `public/portfolio.html`, `public/account.js` | Landing page; log in / create account; account menu (username, Log out); portfolio dashboard (summary tiles, then Holdings, Recommendations and News tabs; holdings table, purchase history); dialogs to add, edit and remove holdings, connect a brokerage, and resolve sync conflicts. Sends input to the server as JSON and renders the result. **No business rules and no storage access.** |
+| **Service** | `server.js` (HTTP entry), `src/service.js`, `src/auth.js`, `src/config.js` | `auth.js`: sign up, log in and out, password hashing (scrypt) and sessions; `server.js` turns the session cookie into whose portfolio a request is for, and sends logged-out requests to the login page (pages) or a 401 (API). `service.js` orchestrates each use case for that user: add/edit/remove a holding, build the portfolio view, connect/sync/disconnect a brokerage, resolve sync conflicts, build recommendations and the written summary. Asks the Domain to decide and the Data tier to load and save. `server.js` only parses requests and maps results and errors to HTTP status codes. `config.js` reads the settings from the environment once; `server.js` hands them down through `service.configure()`. |
+| **Domain** | `src/domain.js`, `src/insights.js`, `src/advice.js`, `src/accounts.js` | The rules, as pure functions. `accounts.js`: what makes a valid username and password. `domain.js`: what makes a holding valid (ticker format, shares and price > 0, date not in the future); merging purchases into one row per ticker; value, total value and gain/loss (per holding and overall); allocation by ticker; applying the user's changes to synced holdings and detecting conflicts with fresh brokerage data. `insights.js`: the diversification score and concentration risk; headline sentiment; deciding which news is about which holding; the recommendation rules. `advice.js`: the facts given to the AI model, the checks on what it writes, and the rules-only summary. No I/O. |
+| **Data** | `src/data.js`, `src/snaptrade.js`, `src/prices.js`, `src/news.js`, `src/claude.js` | `data.js`: all SQLite access (accounts and sessions; each user's holdings, brokerage accounts, positions, buy history, and changes to synced holdings). `snaptrade.js`: the only code that uses the SnapTrade keys or calls SnapTrade; converts its data into Folio's shape. `prices.js`: the only code that fetches market prices (Yahoo Finance, with Finnhub as a backup), with a one-minute cache. `news.js`: the only code that fetches news (Finnhub company news, with Yahoo Finance as a backup), with a 15-minute cache. `claude.js`: the only code that calls the Claude API (optional), with a 6-hour cache per set of facts. |
 
 **Dependency rule:** dependencies point one way: Presentation → Service →
 Domain, and Service → Data. The Domain depends on nothing (it imports no other
 module), the Data tier never calls up into Service or Domain, and the
 Presentation tier reaches the server only over HTTP. In code this is visible
-in the `require` calls: `server.js` imports only `config.js` and `service.js`; `service.js`
-imports `domain.js`, `insights.js`, `advice.js`, `data.js`, `snaptrade.js`, `prices.js`, `news.js` and `claude.js`; the three Domain files import nothing.
+in the `require` calls: `server.js` imports only `config.js`, `service.js` and `auth.js`; `service.js`
+imports `domain.js`, `insights.js`, `advice.js`, `data.js`, `snaptrade.js`, `prices.js`, `news.js` and `claude.js`;
+`auth.js` imports `accounts.js` and `data.js`; the four Domain files import nothing.
 
 ### C4 — Context
 
@@ -382,6 +390,7 @@ Decisions live in [`docs/adr/`](docs/adr/).
 | [004](docs/adr/adr-004.md) | Keep user edits to synced holdings separate; let the user decide on sync | accepted |
 | [005](docs/adr/adr-005.md) | News from Finnhub with a Yahoo fallback; rule-based recommendations instead of an LLM | accepted, amended by 006 |
 | [006](docs/adr/adr-006.md) | Claude writes the recommendations from Folio's numbers; Folio checks every number | accepted |
+| [007](docs/adr/adr-007.md) | Username/password accounts with server-side sessions in SQLite | accepted |
 
 ## Weekly log
 

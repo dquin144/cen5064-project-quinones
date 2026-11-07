@@ -40,7 +40,56 @@
   nav.wrap {
     padding-top: 28px;
     padding-bottom: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
+
+  /* Account menu (top right): username, and Log out */
+  .account { position: relative; }
+  .account-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: inherit;
+    font-size: 0.92rem;
+    font-weight: 500;
+    padding: 6px 12px 6px 6px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--card);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .account-btn:hover { border-color: var(--ink-soft); }
+  .account-btn:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+  .account-initial {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--sage);
+    color: var(--paper);
+    font-size: 0.8rem;
+    font-weight: 600;
+    display: grid;
+    place-items: center;
+  }
+  .account-caret { font-size: 0.7rem; color: var(--ink-soft); }
+  .account-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    min-width: 220px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--card);
+    box-shadow: 0 6px 24px rgba(28, 43, 34, 0.12);
+    z-index: 10;
+  }
+  .account-menu .signed-in { font-size: 0.8rem; color: var(--ink-soft); margin: 0 0 2px; }
+  .account-menu .who { font-weight: 600; margin: 0 0 12px; overflow-wrap: anywhere; }
+  .account-menu .btn { width: 100%; }
 
   .logo {
     font-family: 'Newsreader', serif;
@@ -253,7 +302,9 @@
     gap: 4px;
     border-bottom: 1px solid var(--line);
     margin-bottom: 24px;
-    overflow-x: auto;
+    overflow-x: auto; /* narrow screens can swipe the tabs */
+    overflow-y: hidden; /* the selected tab's underline overlaps the border by 1px; don't scroll for it */
+    scrollbar-width: none;
   }
   .tab {
     font: inherit;
@@ -541,6 +592,18 @@
 
   <nav class="wrap">
     <a href="index.html" class="logo">Folio</a>
+    <div class="account">
+      <button type="button" class="account-btn" id="account-btn" aria-haspopup="true" aria-expanded="false" aria-controls="account-menu" hidden>
+        <span class="account-initial" id="account-initial" aria-hidden="true"></span>
+        <span id="account-name"></span>
+        <span class="account-caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="account-menu" id="account-menu" hidden>
+        <p class="signed-in">Signed in as</p>
+        <p class="who" id="account-menu-name"></p>
+        <button type="button" class="btn btn-ghost" id="logout-btn">Log out</button>
+      </div>
+    </div>
   </nav>
 
   <main class="wrap">
@@ -764,6 +827,10 @@
       headers: body ? { 'Content-Type': 'application/json' } : {},
       body: body ? JSON.stringify(body) : undefined,
     });
+    // The session ended (logged out elsewhere, or expired): log in again, then come back.
+    if (res.status === 401) {
+      location.href = `login.html?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`;
+    }
     return { status: res.status, data: await res.json().catch(() => ({})) };
   }
 
@@ -1608,5 +1675,6 @@
     }
   })();
 </script>
+<script src="account.js"></script>
 </body>
 </html>
