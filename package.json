@@ -12,6 +12,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
     "snaptrade-typescript-sdk": "^12.2.18"
   },
   "overrides": {

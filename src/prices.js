@@ -40,7 +40,13 @@ async function fromYahoo(ticker) {
   const meta = body.chart?.result?.[0]?.meta;
   const price = Number(meta?.regularMarketPrice);
   if (!(price > 0)) throw new Error('no price');
-  return { price, asOf: isoFromSeconds(meta.regularMarketTime), source: 'yahoo' };
+  const quote = { price, asOf: isoFromSeconds(meta.regularMarketTime), source: 'yahoo' };
+  // Yahoo also names the company and says whether it's a stock or a fund; news
+  // matching and the diversification score use these when they're there.
+  const name = meta.longName || meta.shortName;
+  if (name) quote.name = name;
+  if (meta.instrumentType) quote.assetType = meta.instrumentType;
+  return quote;
 }
 
 // Finnhub returns c = 0 for symbols it doesn't know.
@@ -73,7 +79,8 @@ async function fetchQuote(ticker) {
   throw lastErr;
 }
 
-// Returns Map<ticker, { price, asOf, source }> for the tickers that could be priced.
+// Returns Map<ticker, { price, asOf, source, name?, assetType? }> for the tickers
+// that could be priced.
 // A ticker that fails everywhere keeps its last cached quote if there is one;
 // otherwise it is logged and left out. This never throws.
 // fresh: true ignores the cache (the "Refresh prices" button).
@@ -101,7 +108,7 @@ async function getQuotes(tickers, { fresh = false } = {}) {
     }
   });
 
-  return new Map([...quotes].map(([t, { price, asOf, source }]) => [t, { price, asOf, source }]));
+  return new Map([...quotes].map(([t, { fetchedAt, ...quote }]) => [t, quote]));
 }
 
 module.exports = { configure, getQuotes, setFetchForTests, clearCacheForTests };

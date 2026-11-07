@@ -87,6 +87,14 @@ async function handle(req, res) {
   if (route === 'GET /api/portfolio') {
     return sendJson(res, 200, await pricedPortfolio(searchParams.get('refresh') === '1'));
   }
+  if (route === 'GET /api/recommendations') {
+    await service.refreshPrices(); // cached briefly, so this is cheap
+    return sendJson(res, 200, await service.getRecommendations({ fresh: searchParams.get('refresh') === '1' }));
+  }
+  if (route === 'GET /api/advice') {
+    await service.refreshPrices();
+    return sendJson(res, 200, await service.getAdvice({ fresh: searchParams.get('refresh') === '1' }));
+  }
   if (route === 'POST /api/holdings') {
     const { errors } = service.addHolding(await readJson(req));
     if (Object.keys(errors).length > 0) return sendJson(res, 400, { errors });

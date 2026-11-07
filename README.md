@@ -7,8 +7,8 @@
 ## Purpose & scope
 
 **What:** Folio is a web app that shows individual investors what they own,
-what it's worth, and how they're doing, and (by the end of the semester)
-analyzes the portfolio's diversification and risk and surfaces news and
+what it's worth, and how they're doing, scores the portfolio's
+diversification and concentration risk, and surfaces news and plain-language
 recommendations tied to their holdings.
 
 **For whom:** beginner and intermediate individual investors who hold stocks
@@ -21,8 +21,8 @@ their portfolio without building spreadsheets.
 |---|----------|--------|
 | UC1 | **Build and maintain a portfolio by hand:** add a holding (ticker, shares, purchase price, purchase date), edit or remove it; invalid input is rejected | ✅ Working |
 | UC2 | **Import holdings from a brokerage:** connect a brokerage read-only (E*TRADE, Robinhood, Schwab, Fidelity, …), sync and disconnect | ✅ Working |
-| UC3 | **See how the portfolio is doing:** total value, gain/loss, allocation, diversification and concentration scores | 🟡 Live prices, value, gain/loss (total and per holding) and allocation by ticker working; scores planned |
-| UC4 | **Get news and recommendations for my holdings:** rule-based insights and news matched to what the user owns | ⏳ Planned |
+| UC3 | **See how the portfolio is doing:** total value, gain/loss, allocation, diversification and concentration scores | ✅ Working |
+| UC4 | **Get news and recommendations for my holdings:** rule-based insights and news matched to what the user owns | ✅ Working |
 
 **Scope:** Folio runs locally for a single user, covers US stocks and ETFs, and
 only reads brokerage data (no trading). Connecting a brokerage was only a
@@ -58,6 +58,48 @@ If none of these has a price, the holding shows "—" and is left out of the
 totals.
 Live Server doesn't work for the portfolio page, because it needs the Node server.
 
+**Recommendations and news** live in their own tabs next to **Holdings** once
+you have at least one holding.
+
+- **Recommendations** starts with *Your portfolio at a glance*, a short
+  written summary, then the diversification score (0–100) with a
+  concentration-risk label, then the recommendations.
+  - **Folio's findings** come from fixed rules and use your own numbers. For
+    example, "TSLA is 35% of your portfolio: to bring it to 25% you could sell
+    about 8 of your 20 shares (~$2,866), which would realize a loss of about
+    $494, or put about $8,134 of new money into your other holdings". Others
+    say how much in a broad index fund would raise your score to 70, or how
+    many shares of a big winner would take back what you put in, with the US
+    tax angle from your purchase dates and links to the headlines behind a news
+    warning.
+  - **With a Claude key** (below), Claude turns those findings into 3–6
+    numbered moves, most important first, each with why, concrete steps, and
+    the findings it's based on. It combines related findings (one NVDA sale
+    that both takes back your money and brings it under 25%). The findings stay
+    underneath, collapsed, as "How Folio worked these out". Without a key, the
+    findings are the recommendations.
+- **News** lists recent headlines that name your holdings, filterable by
+  ticker, each marked positive or negative when the headline clearly leans one way.
+
+News comes from Finnhub when `FINNHUB_API_KEY` is set (the same free key as
+the backup price source; more articles, with summaries), otherwise from Yahoo
+Finance with no key. It is cached for 15 minutes. The recommendations come
+from fixed rules in `src/insights.js`.
+
+**Optional: AI-written summary and recommendations (Claude).** Without a key,
+everything works as-is from the rules. To turn it on, put an Anthropic API key
+(https://console.anthropic.com → API Keys) in `ANTHROPIC_API_KEY` in `.env`
+and restart. It uses Claude Haiku 5.5, the cheapest Claude model: about
+$0.001 per answer. Answers are cached for 6 hours and only requested while the
+Recommendations tab is open and your holdings changed, or when you click
+**Regenerate**, so normal use costs cents. Set `ANTHROPIC_MODEL` to use a
+different model. Claude only sees the facts Folio computed (holdings, the
+score, the findings with their amounts, matched headlines), not account
+details. Folio checks every number Claude writes against those facts and
+removes any recommendation with a number it didn't provide. Usage is billed to
+your Anthropic account. If Claude is unavailable, the page says why and shows
+the findings instead. None of this is financial advice.
+
 **Try the core use case (UC1):** click **Add holding** and enter
 `AAPL, 10, 150, 2024-01-15`: it appears in the table, and it's still there after
 a refresh or a server restart. Enter the ticker `AAPL!` and the Domain tier
@@ -92,17 +134,17 @@ Four tiers, each with its own files:
 
 | Tier | Files | Responsibilities in Folio |
 |------|-------|---------------------------|
-| **Presentation** | `public/index.html`, `public/portfolio.html` | Landing page; portfolio dashboard (summary tiles, holdings table, purchase history); dialogs to add, edit and remove holdings, connect a brokerage, and resolve sync conflicts. Sends input to the server as JSON and renders the result. **No business rules and no storage access.** |
-| **Service** | `server.js` (HTTP entry), `src/service.js`, `src/config.js` | Orchestrates each use case: add/edit/remove a holding, build the portfolio view, connect/sync/disconnect a brokerage, resolve sync conflicts. Asks the Domain to decide and the Data tier to load and save. `server.js` only parses requests and maps results and errors to HTTP status codes. `config.js` reads the settings from the environment once; `server.js` hands them down through `service.configure()`. |
-| **Domain** | `src/domain.js` | The rules, as pure functions: what makes a holding valid (ticker format, shares and price > 0, date not in the future); merging purchases into one row per ticker; value, total value and gain/loss (per holding and overall); allocation by ticker; applying the user's changes to synced holdings and detecting conflicts with fresh brokerage data. No I/O. *Planned:* diversification score, rule-based insights, matching news to holdings. |
-| **Data** | `src/data.js`, `src/snaptrade.js`, `src/prices.js` | `data.js`: all SQLite access (holdings, brokerage accounts, positions, buy history, the user's changes to synced holdings). `snaptrade.js`: the only code that uses the SnapTrade keys or calls SnapTrade; converts its data into Folio's shape. `prices.js`: the only code that fetches market prices (Yahoo Finance, with Finnhub as a backup), with a one-minute cache. *Planned:* `news.js`, a client for a news API. |
+| **Presentation** | `public/index.html`, `public/portfolio.html` | Landing page; portfolio dashboard (summary tiles, then Holdings, Recommendations and News tabs; holdings table, purchase history); dialogs to add, edit and remove holdings, connect a brokerage, and resolve sync conflicts. Sends input to the server as JSON and renders the result. **No business rules and no storage access.** |
+| **Service** | `server.js` (HTTP entry), `src/service.js`, `src/config.js` | Orchestrates each use case: add/edit/remove a holding, build the portfolio view, connect/sync/disconnect a brokerage, resolve sync conflicts, build recommendations and the written summary. Asks the Domain to decide and the Data tier to load and save. `server.js` only parses requests and maps results and errors to HTTP status codes. `config.js` reads the settings from the environment once; `server.js` hands them down through `service.configure()`. |
+| **Domain** | `src/domain.js`, `src/insights.js`, `src/advice.js` | The rules, as pure functions. `domain.js`: what makes a holding valid (ticker format, shares and price > 0, date not in the future); merging purchases into one row per ticker; value, total value and gain/loss (per holding and overall); allocation by ticker; applying the user's changes to synced holdings and detecting conflicts with fresh brokerage data. `insights.js`: the diversification score and concentration risk; headline sentiment; deciding which news is about which holding; the recommendation rules. `advice.js`: the facts given to the AI model, the checks on what it writes, and the rules-only summary. No I/O. |
+| **Data** | `src/data.js`, `src/snaptrade.js`, `src/prices.js`, `src/news.js`, `src/claude.js` | `data.js`: all SQLite access (holdings, brokerage accounts, positions, buy history, the user's changes to synced holdings). `snaptrade.js`: the only code that uses the SnapTrade keys or calls SnapTrade; converts its data into Folio's shape. `prices.js`: the only code that fetches market prices (Yahoo Finance, with Finnhub as a backup), with a one-minute cache. `news.js`: the only code that fetches news (Finnhub company news, with Yahoo Finance as a backup), with a 15-minute cache. `claude.js`: the only code that calls the Claude API (optional), with a 6-hour cache per set of facts. |
 
 **Dependency rule:** dependencies point one way: Presentation → Service →
 Domain, and Service → Data. The Domain depends on nothing (it imports no other
 module), the Data tier never calls up into Service or Domain, and the
 Presentation tier reaches the server only over HTTP. In code this is visible
 in the `require` calls: `server.js` imports only `config.js` and `service.js`; `service.js`
-imports `domain.js`, `data.js`, `snaptrade.js` and `prices.js`; `domain.js` imports nothing.
+imports `domain.js`, `insights.js`, `advice.js`, `data.js`, `snaptrade.js`, `prices.js`, `news.js` and `claude.js`; the three Domain files import nothing.
 
 ### C4 — Context
 
@@ -113,13 +155,11 @@ flowchart LR
     system -->|reads accounts & positions| snaptrade[[SnapTrade API]]
     snaptrade -->|read-only access| brokerages[[Brokerages<br/>E*TRADE, Robinhood, Schwab, …]]
     system -->|live prices| market[[Market Data API<br/>Yahoo Finance, Finnhub]]
-    system -.->|news| news[[News API]]
-
-    classDef planned stroke-dasharray: 5 5
-    class news planned
+    system -->|news about holdings| news[[News API<br/>Finnhub, Yahoo Finance]]
+    system -.->|optional: facts in, summary & recommendations out| llm[[Claude API<br/>Anthropic]]
 ```
 
-*Dashed boxes and lines = planned (not built yet).*
+*Dashed = optional (only used when `ANTHROPIC_API_KEY` is set).*
 
 ### C4 — Container
 
@@ -130,10 +170,10 @@ flowchart LR
 
     subgraph System [Folio]
         direction TB
-        ui[Web UI<br/>Presentation · public/<br/>-shows holdings, value, gain/loss<br/>-collects holding entry & edits]
-        service[Application Service<br/>server.js, src/service.js<br/>-orchestrates add/edit/remove<br/>-builds portfolio summary<br/>-connects & syncs brokerage]
-        domain[Domain Model<br/>src/domain.js<br/>-validates holdings<br/>-value, gain/loss, sync conflicts]
-        data[Data Layer<br/>src/data.js, src/snaptrade.js, src/prices.js<br/>-persists holdings & synced data<br/>-wraps SnapTrade and price clients]
+        ui[Web UI<br/>Presentation · public/<br/>-shows holdings, value, gain/loss<br/>-shows score, recommendations, news<br/>-collects holding entry & edits]
+        service[Application Service<br/>server.js, src/service.js<br/>-orchestrates add/edit/remove<br/>-builds portfolio summary<br/>-connects & syncs brokerage<br/>-builds recommendations]
+        domain[Domain Model<br/>src/domain.js, src/insights.js, src/advice.js<br/>-validates holdings<br/>-value, gain/loss, sync conflicts<br/>-risk score, news matching, recommendations<br/>-facts for the AI, checks on its answer]
+        data[Data Layer<br/>src/data.js, src/snaptrade.js,<br/>src/prices.js, src/news.js, src/claude.js<br/>-persists holdings & synced data<br/>-wraps SnapTrade, price, news and Claude clients]
         ui --> service --> domain
         service --> data
     end
@@ -141,24 +181,23 @@ flowchart LR
     db[(Portfolio Database<br/>SQLite)]
     snaptrade[[SnapTrade API]]
     market[[Market Data API<br/>Yahoo Finance, Finnhub]]
-    news[[News API]]
+    news[[News API<br/>Finnhub, Yahoo Finance]]
+    llm[[Claude API<br/>optional]]
 
     user --> ui
     data --> db
     data --> snaptrade
     data --> market
-    data -.-> news
-
-    classDef planned stroke-dasharray: 5 5
-    class news planned
+    data --> news
+    data -.-> llm
 ```
 
-*Dashed boxes and lines = planned (not built yet).*
+*Dashed = optional (only used when `ANTHROPIC_API_KEY` is set).*
 
 ### UML — Class diagram
 
 The core domain concepts. In code they are plain JavaScript objects, and the
-operations are pure functions in `src/domain.js`. `RiskScore` is planned.
+operations are pure functions in `src/domain.js` and `src/insights.js`.
 
 ```mermaid
 classDiagram
@@ -199,16 +238,40 @@ classDiagram
     }
 
     class RiskScore {
-        <<planned>>
-        -diversificationScore: Decimal
+        -diversificationScore: Integer
+        -effectiveHoldings: Decimal
         -concentrationWarning: Boolean
-        +overallRiskLabel() String
+        -riskLabel: Low, Moderate or High
+        +scorePortfolio()
+    }
+
+    class NewsArticle {
+        -headline: String
+        -url: String
+        -source: String
+        -publishedAt: Date
+        -tickers: String[]
+        -sentiment: positive, negative or neutral
+        +matchNewsToHoldings()
+    }
+
+    class Insight {
+        -severity: warning, info or positive
+        -ticker: String
+        -title: String
+        -detail: String
+        -action: String
+        +generateInsights()
     }
 
     Portfolio "1" --> "many" Holding : manual
     Portfolio "1" --> "many" BrokeragePosition : synced
     PositionOverride "0..1" --> "1" BrokeragePosition : user change to
-    Portfolio "1" --> "1" RiskScore : scored by (planned)
+    Portfolio "1" --> "0..1" RiskScore : scored by
+    NewsArticle "many" --> "1..many" Holding : about
+    Insight "many" --> "1" Portfolio : recommends for
+    Insight ..> RiskScore : uses
+    Insight ..> NewsArticle : uses
 ```
 
 ### UML — Sequence diagram (UC1: add a holding, built)
@@ -241,9 +304,10 @@ sequenceDiagram
     end
 ```
 
-### UML — Sequence diagram (UC4: news & recommendations, planned)
+### UML — Sequence diagram (UC4: news & recommendations, built)
 
-How the planned news feature will flow once built, using the same tiers.
+The page asks for recommendations after it shows the portfolio, so a slow news
+source never delays the holdings table.
 
 ```mermaid
 %%{init: {'sequence': {'messageMargin': 45, 'mirrorActors': false, 'boxMargin': 15}}}%%
@@ -256,20 +320,38 @@ sequenceDiagram
     participant N as News API
 
     U->>UI: open portfolio dashboard
-    UI->>S: getRecommendations()
-    S->>D: load holdings
+    UI->>S: GET /api/recommendations (getRecommendations)
+    S->>D: load holdings, synced positions & latest prices
     D-->>S: holdings
-    S->>Dom: identifyRelevantTopics(holdings)
-    Dom-->>S: tickers & keywords
+    S->>Dom: consolidateHoldings, scorePortfolio
+    Dom-->>S: rows + risk score
+    S->>Dom: identifyRelevantTopics(rows)
+    Dom-->>S: largest holdings, company keywords
     S->>D: fetchNews(tickers)
-    D->>N: GET articles(tickers)
-    N-->>D: articles
-    D-->>S: articles
-    S->>Dom: matchNewsToHoldings(articles, holdings)
-    Dom-->>S: ranked recommendations
-    S-->>UI: recommendations list
-    UI-->>U: recommendations shown
+    alt cached in the last 15 minutes
+        D-->>S: cached articles
+    else
+        D->>N: Finnhub company news (or Yahoo Finance)
+        N-->>D: articles
+        D-->>S: articles in Folio's shape
+    end
+    S->>Dom: matchNewsToHoldings(articles, topics)
+    Dom-->>S: relevant articles, deduplicated, ranked, with sentiment
+    S->>Dom: generateInsights(rows, score, news)
+    Dom-->>S: recommendations, warnings first
+    S-->>UI: score, recommendations, top news
+    UI-->>U: score, suggestions and headlines shown
 ```
+
+When the Recommendations tab is open, the page also asks for the written
+summary and Claude's recommendations (`GET /api/advice`, `getAdvice`). The
+Service builds the same findings, the Domain turns them into a brief
+(`buildAdvisorBrief`), and `claude.js` sends it to Claude with a JSON output
+schema, unless that exact brief was answered in the last 6 hours. The Domain
+then checks the answer (`validateAdvice`), dropping any recommendation with a
+number that isn't in the brief, before it reaches the page. With no key, or if
+Claude fails, `fallbackAdvice` writes the summary from the rules and the page
+shows the findings as the recommendations.
 
 ## Plan for the second half
 
@@ -298,6 +380,8 @@ Decisions live in [`docs/adr/`](docs/adr/).
 | [002](docs/adr/adr-002.md) | Use SQLite via built-in `node:sqlite` for the Data tier | accepted |
 | [003](docs/adr/adr-003.md) | Use SnapTrade to connect brokerage accounts | accepted |
 | [004](docs/adr/adr-004.md) | Keep user edits to synced holdings separate; let the user decide on sync | accepted |
+| [005](docs/adr/adr-005.md) | News from Finnhub with a Yahoo fallback; rule-based recommendations instead of an LLM | accepted, amended by 006 |
+| [006](docs/adr/adr-006.md) | Claude writes the recommendations from Folio's numbers; Folio checks every number | accepted |
 
 ## Weekly log
 
