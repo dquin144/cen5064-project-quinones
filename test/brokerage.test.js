@@ -1,10 +1,12 @@
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert');
 
-process.env.DB_FILE = ':memory:';
-const { closeDb } = require('../src/data.js');
+const { loadConfig } = require('../src/config.js');
+const data = require('../src/data.js');
 const snaptrade = require('../src/snaptrade.js');
 const service = require('../src/service.js');
+
+data.configure(loadConfig({ DB_FILE: ':memory:' }));
 
 // Stands in for the SnapTrade SDK; SDK calls resolve to { data }.
 function fakeClient({ accounts = [], positionsByAccount = {}, buysByAccount = {} } = {}) {
@@ -39,12 +41,11 @@ const stock = (symbol, units, costBasis) => ({
 });
 
 function configure(on) {
-  process.env.SNAPTRADE_CLIENT_ID = on ? 'test-client' : '';
-  process.env.SNAPTRADE_CONSUMER_KEY = on ? 'test-key' : '';
+  snaptrade.configure(loadConfig(on ? { SNAPTRADE_CLIENT_ID: 'test-client', SNAPTRADE_CONSUMER_KEY: 'test-key' } : {}));
 }
 
 beforeEach(() => {
-  closeDb();
+  data.closeDb();
   configure(true);
 });
 

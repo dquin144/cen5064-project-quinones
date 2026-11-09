@@ -1,11 +1,13 @@
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert');
 
-process.env.DB_FILE = ':memory:';
+const { loadConfig } = require('../src/config.js');
 const data = require('../src/data.js');
 const prices = require('../src/prices.js');
 const service = require('../src/service.js');
 const { consolidateHoldings, allocatePortfolio } = require('../src/domain.js');
+
+data.configure(loadConfig({ DB_FILE: ':memory:' }));
 
 const lot = (ticker, shares, purchasePrice, currentPrice = null) =>
   ({ ticker, shares, purchasePrice, purchaseDate: '2024-01-15', currentPrice });
@@ -62,7 +64,7 @@ test('past the limit, the smallest holdings are folded into "Other"', () => {
 beforeEach(() => {
   data.closeDb();
   prices.clearCacheForTests();
-  delete process.env.FINNHUB_API_KEY;
+  prices.configure(loadConfig({}));
 });
 
 const yahoo = (price) => ({ chart: { result: [{ meta: { regularMarketPrice: price, regularMarketTime: 1760000000 } }] } });

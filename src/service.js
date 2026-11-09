@@ -37,6 +37,14 @@ async function brokerage(request) {
   }
 }
 
+// Hands the app's config to the Data-tier modules that need it. Called once by
+// server.js at startup.
+function configure(config) {
+  data.configure(config);
+  prices.configure(config);
+  snaptrade.configure(config);
+}
+
 class NotConfiguredError extends Error {
   constructor() {
     super("Brokerage connection isn't set up. Add SnapTrade keys to .env and restart the server.");
@@ -187,6 +195,7 @@ async function disconnectBrokerage() {
 }
 
 module.exports = {
+  configure,
   addHolding,
   updateHolding,
   removeHolding,

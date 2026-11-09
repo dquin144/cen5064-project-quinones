@@ -4,10 +4,13 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const { getConfig } = require('./src/config');
 const service = require('./src/service');
 
-const PORT = Number(process.env.PORT) || 3000;
-const APP_URL = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
+// The one config object, read here once and handed down.
+const config = getConfig();
+service.configure(config);
+
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MAX_BODY_BYTES = 10 * 1024;
 const CONTENT_TYPES = {
@@ -110,7 +113,7 @@ async function handle(req, res) {
     return sendJson(res, 200, service.getPortfolio());
   }
   if (route === 'POST /api/brokerage/connect') {
-    const url = await service.startBrokerageConnection(`${APP_URL}/portfolio.html?brokerage=connected`);
+    const url = await service.startBrokerageConnection(`${config.appUrl}/portfolio.html?brokerage=connected`);
     return sendJson(res, 200, { url });
   }
   if (route === 'POST /api/brokerage/sync') {
@@ -152,6 +155,6 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Folio running at http://localhost:${PORT}`);
+server.listen(config.port, () => {
+  console.log(`Folio running at http://localhost:${config.port}`);
 });

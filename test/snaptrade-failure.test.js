@@ -1,10 +1,12 @@
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert');
 
-process.env.DB_FILE = ':memory:';
-const { closeDb } = require('../src/data.js');
+const { loadConfig } = require('../src/config.js');
+const data = require('../src/data.js');
 const snaptrade = require('../src/snaptrade.js');
 const service = require('../src/service.js');
+
+data.configure(loadConfig({ DB_FILE: ':memory:' }));
 
 // Errors shaped like the SnapTrade SDK's SnaptradeError.
 const unreachable = () => Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
@@ -43,9 +45,8 @@ function failingClient(makeError, { working = false } = {}) {
 const manual = { ticker: 'AAPL', shares: '10', purchasePrice: '150', purchaseDate: '2024-01-15' };
 
 beforeEach(() => {
-  closeDb();
-  process.env.SNAPTRADE_CLIENT_ID = 'test-client';
-  process.env.SNAPTRADE_CONSUMER_KEY = 'test-key';
+  data.closeDb();
+  snaptrade.configure(loadConfig({ SNAPTRADE_CLIENT_ID: 'test-client', SNAPTRADE_CONSUMER_KEY: 'test-key' }));
 });
 
 test('when SnapTrade is down, manual holdings keep working and the user gets a clear message', async () => {
