@@ -17,6 +17,7 @@
     --sage-dark: #2E5039;
     --error: #A2402E;
     --line: #DCD5C8;
+    --warn: #8F5414;
   }
 
   * { box-sizing: border-box; }
@@ -246,6 +247,204 @@
     margin: 12px 0 0;
   }
 
+  /* Tabs: Holdings / Recommendations / News */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 24px;
+    overflow-x: auto;
+  }
+  .tab {
+    font: inherit;
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 10px 16px;
+    margin-bottom: -1px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--ink-soft);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--sage); }
+  .tab:focus-visible { outline: 2px solid var(--sage); outline-offset: -2px; }
+  .tab-badge {
+    display: inline-block;
+    min-width: 1.3em;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    text-align: center;
+    background: var(--warn);
+    color: var(--paper);
+  }
+  .tab-badge.muted-badge { background: var(--line); color: var(--ink); }
+
+  /* Written summary */
+  .advice-summary {
+    font-family: 'Newsreader', serif;
+    font-size: 1.15rem;
+    line-height: 1.55;
+    margin: 0;
+    max-width: 70ch;
+  }
+  .advice-summary.loading { color: var(--ink-soft); font-style: italic; }
+  .insight-links {
+    list-style: none;
+    margin: 6px 0 4px;
+    padding: 0;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+  }
+  .insight-links li { margin: 3px 0; }
+  .insight-links a { color: var(--sage-dark); }
+  /* Claude's recommendations, then Folio's findings behind them */
+  .ai-list { list-style: none; margin: 8px 0 0; padding: 0; counter-reset: rec; }
+  .ai-rec {
+    counter-increment: rec;
+    position: relative;
+    padding: 14px 0 14px 40px;
+    border-bottom: 1px solid var(--line);
+  }
+  .ai-rec:last-child { border-bottom: none; }
+  .ai-rec::before {
+    content: counter(rec);
+    position: absolute;
+    left: 0;
+    top: 14px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--ink);
+    color: var(--paper);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: center;
+    line-height: 26px;
+  }
+  .ai-rec.high::before { background: var(--warn); }
+  .ai-rec-head { display: flex; gap: 8px; align-items: center; }
+  .ai-rec p { margin: 4px 0; line-height: 1.5; font-size: 0.92rem; color: var(--ink-soft); }
+  .ai-steps { margin: 6px 0; padding-left: 18px; font-size: 0.92rem; line-height: 1.5; }
+  .ai-steps li { margin: 2px 0; }
+  .ai-rec p.ai-basis { font-size: 0.8rem; }
+  .priority {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .priority.high { color: var(--warn); }
+  .priority.medium { color: var(--ink); }
+  .findings { margin-top: 12px; }
+  .findings > summary {
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 0.95rem;
+    padding: 8px 0;
+    color: var(--sage-dark);
+  }
+  .findings > summary:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+
+  /* Recommendations: the diversification score, then one item per insight */
+  .score {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    padding-bottom: 20px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .score-num {
+    font-family: 'Newsreader', serif;
+    font-size: 2.4rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .score-of { color: var(--ink-soft); font-size: 0.9rem; margin-left: 2px; }
+  .score-body { flex: 1; min-width: 0; }
+  .score-label { font-size: 0.95rem; font-weight: 500; margin-bottom: 8px; }
+  .score-meter {
+    height: 8px;
+    max-width: 360px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .score-meter span { display: block; height: 100%; background: var(--sage); }
+  .insight-list { list-style: none; margin: 0; padding: 0; }
+  .insight {
+    border-left: 3px solid var(--ink-soft);
+    padding: 4px 0 4px 14px;
+    margin: 16px 0;
+  }
+  .insight.warning { border-color: var(--warn); }
+  .insight.positive { border-color: var(--sage); }
+  .insight-tag {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .insight.warning .insight-tag { color: var(--warn); }
+  .insight.positive .insight-tag { color: var(--sage-dark); }
+  .insight-title { display: block; font-weight: 500; margin: 2px 0 4px; }
+  .insight p { margin: 0 0 4px; line-height: 1.5; font-size: 0.92rem; color: var(--ink-soft); }
+  .insight p.insight-action { color: var(--ink); }
+  .disclaimer {
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+    margin: 16px 0 0;
+  }
+
+  /* News about the user's holdings */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font: inherit;
+    font-size: 0.82rem;
+    padding: 4px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  .chip:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+  .news-list { list-style: none; margin: 0; padding: 0; }
+  .news-list li { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .news-list li:last-child { border-bottom: none; }
+  .news-list a { color: var(--ink); text-decoration: none; font-weight: 500; line-height: 1.4; }
+  .news-list a:hover { text-decoration: underline; }
+  .news-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    align-items: center;
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+    margin-top: 4px;
+  }
+  .ticker-tag {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    color: var(--ink);
+  }
+  .sentiment.positive { color: var(--sage-dark); font-weight: 500; }
+  .sentiment.negative { color: var(--error); font-weight: 500; }
+
   .visually-hidden {
     position: absolute;
     width: 1px;
@@ -371,53 +570,109 @@
     <p class="notice" id="brokerage-notice" role="status" hidden></p>
     <p class="status" id="status" role="status" hidden></p>
 
-    <section class="card">
-      <div class="section-head">
-        <h2>Holdings</h2>
-        <div class="actions" id="head-actions" hidden>
-          <span class="prices-as-of" id="prices-as-of" hidden></span>
-          <button type="button" class="link-btn" id="refresh-prices-btn">Refresh prices</button>
-          <button type="button" class="link-btn" id="sync-btn" hidden>Sync accounts</button>
-          <button type="button" class="link-btn" id="disconnect-btn" hidden>Disconnect</button>
-          <button type="button" class="btn btn-ghost" data-open="connect-dialog">Connect brokerage</button>
-          <button type="button" class="btn btn-solid" data-open="add-dialog">Add holding</button>
+    <div class="tabs" role="tablist" aria-label="Portfolio sections" id="tabs" hidden>
+      <button type="button" role="tab" class="tab" id="tab-holdings" aria-controls="panel-holdings" aria-selected="true">Holdings</button>
+      <button type="button" role="tab" class="tab" id="tab-recommendations" aria-controls="panel-recommendations" aria-selected="false" tabindex="-1">Recommendations<span class="tab-badge" id="recommendations-badge" hidden></span></button>
+      <button type="button" role="tab" class="tab" id="tab-news" aria-controls="panel-news" aria-selected="false" tabindex="-1">News<span class="tab-badge muted-badge" id="news-badge" hidden></span></button>
+    </div>
+
+    <div role="tabpanel" id="panel-holdings" aria-labelledby="tab-holdings">
+      <section class="card">
+        <div class="section-head">
+          <h2>Holdings</h2>
+          <div class="actions" id="head-actions" hidden>
+            <span class="prices-as-of" id="prices-as-of" hidden></span>
+            <button type="button" class="link-btn" id="refresh-prices-btn">Refresh prices</button>
+            <button type="button" class="link-btn" id="sync-btn" hidden>Sync accounts</button>
+            <button type="button" class="link-btn" id="disconnect-btn" hidden>Disconnect</button>
+            <button type="button" class="btn btn-ghost" data-open="connect-dialog">Connect brokerage</button>
+            <button type="button" class="btn btn-solid" data-open="add-dialog">Add holding</button>
+          </div>
         </div>
-      </div>
 
-      <div class="empty" id="empty-state">
-        <h3>Your portfolio is empty</h3>
-        <p>Add a stock you own by hand, or connect a brokerage account to bring in your holdings automatically.</p>
-        <div class="actions">
-          <button type="button" class="btn btn-solid" data-open="add-dialog">Add holding</button>
-          <button type="button" class="btn btn-ghost" data-open="connect-dialog">Connect brokerage</button>
+        <div class="empty" id="empty-state">
+          <h3>Your portfolio is empty</h3>
+          <p>Add a stock you own by hand, or connect a brokerage account to bring in your holdings automatically.</p>
+          <div class="actions">
+            <button type="button" class="btn btn-solid" data-open="add-dialog">Add holding</button>
+            <button type="button" class="btn btn-ghost" data-open="connect-dialog">Connect brokerage</button>
+          </div>
         </div>
-      </div>
 
-      <div class="table-scroll" id="holdings-table" hidden>
-        <table>
-          <thead>
-            <tr>
-              <th>Ticker</th>
-              <th class="num">Value</th>
-              <th class="num">Gain/loss</th>
-              <th class="num">Price</th>
-              <th class="num">Shares</th>
-              <th>Purchase price</th>
-              <th><span class="visually-hidden">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody id="holdings-body"></tbody>
-        </table>
-      </div>
-    </section>
+        <div class="table-scroll" id="holdings-table" hidden>
+          <table>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th class="num">Value</th>
+                <th class="num">Gain/loss</th>
+                <th class="num">Price</th>
+                <th class="num">Shares</th>
+                <th>Purchase price</th>
+                <th><span class="visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody id="holdings-body"></tbody>
+          </table>
+        </div>
+      </section>
 
-    <section class="card" id="allocation" aria-labelledby="allocation-title" hidden>
-      <div class="section-head">
-        <h2 id="allocation-title">Allocation</h2>
-      </div>
-      <ul class="alloc-list" id="allocation-list" aria-label="Share of portfolio value by ticker"></ul>
-      <p class="alloc-note" id="allocation-note" hidden></p>
-    </section>
+      <section class="card" id="allocation" aria-labelledby="allocation-title" hidden>
+        <div class="section-head">
+          <h2 id="allocation-title">Allocation</h2>
+        </div>
+        <ul class="alloc-list" id="allocation-list" aria-label="Share of portfolio value by ticker"></ul>
+        <p class="alloc-note" id="allocation-note" hidden></p>
+      </section>
+    </div>
+
+    <div role="tabpanel" id="panel-recommendations" aria-labelledby="tab-recommendations" hidden>
+      <section class="card" aria-labelledby="advice-title">
+        <div class="section-head">
+          <h2 id="advice-title">Your portfolio at a glance</h2>
+          <div class="actions">
+            <span class="prices-as-of" id="advice-status" role="status"></span>
+            <button type="button" class="link-btn" id="advice-refresh" hidden>Regenerate</button>
+          </div>
+        </div>
+        <p class="advice-summary" id="advice-summary"></p>
+        <p class="disclaimer" id="advice-source"></p>
+      </section>
+
+      <section class="card" aria-labelledby="insights-title">
+        <div class="section-head">
+          <h2 id="insights-title">Recommendations</h2>
+          <span class="prices-as-of" id="insights-status" role="status"></span>
+        </div>
+        <div class="score" id="score" hidden>
+          <div><span class="score-num" id="score-num"></span><span class="score-of">/100</span></div>
+          <div class="score-body">
+            <div class="score-label">Diversification score</div>
+            <div class="score-meter" aria-hidden="true"><span id="score-fill"></span></div>
+            <div class="tile-note" id="score-note"></div>
+          </div>
+        </div>
+        <p class="status error" id="news-issue" hidden></p>
+        <ol class="ai-list" id="ai-list" hidden></ol>
+        <p class="disclaimer" id="ai-dropped" hidden></p>
+        <details class="findings" id="findings" open>
+          <summary id="findings-summary">Folio's findings</summary>
+          <ul class="insight-list" id="insight-list"></ul>
+        </details>
+        <p class="disclaimer">Every amount comes from Folio's rules applied to your holdings, prices and recent headlines. When an AI model writes the summary and recommendations, Folio checks that each number in them is one of those amounts. Tax notes assume a taxable US account. This is for learning, not financial advice, and the decisions are yours.</p>
+      </section>
+    </div>
+
+    <div role="tabpanel" id="panel-news" aria-labelledby="tab-news" hidden>
+      <section class="card" aria-labelledby="news-title">
+        <div class="section-head">
+          <h2 id="news-title">News about your holdings</h2>
+          <div class="chips" id="news-filter" role="group" aria-label="Show news for"></div>
+        </div>
+        <ul class="news-list" id="news-list"></ul>
+        <p class="muted" id="news-empty" hidden>No recent news names your holdings. Check back later.</p>
+      </section>
+    </div>
   </main>
 
   <dialog id="add-dialog" aria-labelledby="add-title">
@@ -639,6 +894,328 @@
     $('allocation-note').hidden = notes.length === 0;
   }
 
+  // ---- Recommendations and news (UC4) ----
+
+  const INSIGHT_TAGS = { warning: 'Heads up', info: 'Worth a look', positive: 'Good news' };
+  const relativeTime = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+  let lastRecommendations = null; // JSON of the last render, to skip redraws when nothing changed
+  let recommendationsRequest = 0; // only the newest request may render
+  let recommendationsTimer = null;
+  let newsFilter = null; // ticker the news list is filtered to, or null for all
+
+  function timeAgo(iso) {
+    const minutes = Math.round((Date.parse(iso) - Date.now()) / 60000);
+    if (minutes > -60) return relativeTime.format(Math.min(-1, minutes), 'minute');
+    if (minutes > -60 * 24) return relativeTime.format(Math.round(minutes / 60), 'hour');
+    return relativeTime.format(Math.round(minutes / (60 * 24)), 'day');
+  }
+
+  function renderScore(score) {
+    $('score').hidden = !score;
+    if (!score) return;
+    $('score-num').textContent = score.diversificationScore;
+    $('score-fill').style.width = `${score.diversificationScore}%`;
+    const parts = [`Concentration risk: ${score.riskLabel}`, `spread like about ${score.effectiveHoldings} equal holdings`];
+    if (score.largestStock) parts.push(`largest stock ${score.largestStock.ticker} at ${Math.round(score.largestStock.percent)}%`);
+    $('score-note').textContent = parts.join(' · ');
+  }
+
+  let lastInsights = [];
+  let aiRecommendations = []; // Claude's recommendations, when there are any
+  let findingsCollapsed = false; // collapse the findings once, when Claude's list first appears
+
+  // With Claude's recommendations, Folio's findings are the working behind them
+  // (collapsed); without, the findings are the recommendations (open).
+  function renderFindingsHeader() {
+    const n = lastInsights.length;
+    const ai = aiRecommendations.length > 0;
+    $('findings-summary').textContent = ai
+      ? `How Folio worked these out: ${n} finding${n === 1 ? '' : 's'} with the exact numbers`
+      : `Folio's findings (${n})`;
+    if (ai && !findingsCollapsed) {
+      $('findings').open = false;
+      findingsCollapsed = true;
+    }
+    if (!ai) $('findings').open = true;
+  }
+
+  const PRIORITY_LABELS = { high: 'High priority', medium: 'Medium priority', low: 'Low priority' };
+
+  function renderAiRecommendations() {
+    const list = $('ai-list');
+    list.replaceChildren();
+    const titles = new Map(lastInsights.map((i) => [i.id, i.title]));
+    for (const rec of aiRecommendations) {
+      const li = document.createElement('li');
+      li.className = `ai-rec ${rec.priority}`;
+      const head = document.createElement('div');
+      head.className = 'ai-rec-head';
+      const priority = document.createElement('span');
+      priority.className = `priority ${rec.priority}`;
+      priority.textContent = PRIORITY_LABELS[rec.priority];
+      head.appendChild(priority);
+      if (rec.ticker) {
+        const tag = document.createElement('span');
+        tag.className = 'ticker-tag';
+        tag.textContent = rec.ticker;
+        head.appendChild(tag);
+      }
+      const title = document.createElement('strong');
+      title.className = 'insight-title';
+      title.textContent = rec.title;
+      li.append(head, title);
+      if (rec.why) {
+        const why = document.createElement('p');
+        why.textContent = rec.why;
+        li.appendChild(why);
+      }
+      if (rec.steps.length) {
+        const steps = document.createElement('ul');
+        steps.className = 'ai-steps';
+        for (const step of rec.steps) {
+          const s = document.createElement('li');
+          s.textContent = step;
+          steps.appendChild(s);
+        }
+        li.appendChild(steps);
+      }
+      const basis = rec.basedOn.map((id) => titles.get(id)).filter(Boolean);
+      if (basis.length) {
+        const based = document.createElement('p');
+        based.className = 'ai-basis';
+        based.textContent = `Based on: ${basis.join(' · ')}`;
+        li.appendChild(based);
+      }
+      list.appendChild(li);
+    }
+    list.hidden = aiRecommendations.length === 0;
+  }
+
+  function renderInsights(insights = lastInsights) {
+    lastInsights = insights;
+    renderFindingsHeader();
+    renderAiRecommendations(); // its "Based on" lines name the findings
+    const list = $('insight-list');
+    list.replaceChildren();
+    for (const insight of insights) {
+      const li = document.createElement('li');
+      li.className = `insight ${insight.severity}`;
+      const tag = document.createElement('span');
+      tag.className = 'insight-tag';
+      tag.textContent = INSIGHT_TAGS[insight.severity];
+      const title = document.createElement('strong');
+      title.className = 'insight-title';
+      title.textContent = insight.title;
+      const detail = document.createElement('p');
+      detail.textContent = insight.detail;
+      const action = document.createElement('p');
+      action.className = 'insight-action';
+      action.textContent = insight.action;
+      li.append(tag, title, detail, action);
+      if (insight.links?.length) {
+        const links = document.createElement('ul');
+        links.className = 'insight-links';
+        for (const item of insight.links) {
+          const entry = document.createElement('li');
+          const a = document.createElement('a');
+          a.href = item.url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.textContent = item.headline;
+          entry.appendChild(a);
+          const meta = [item.source, timeAgo(item.publishedAt)].filter(Boolean).join(' · ');
+          if (meta) entry.append(` · ${meta}`);
+          links.appendChild(entry);
+        }
+        li.appendChild(links);
+      }
+      list.appendChild(li);
+    }
+  }
+
+  function renderNews(news) {
+    const tickers = [...new Set(news.flatMap((n) => n.tickers))];
+    if (newsFilter && !tickers.includes(newsFilter)) newsFilter = null;
+
+    const filter = $('news-filter');
+    filter.replaceChildren();
+    if (tickers.length > 1) {
+      for (const ticker of [null, ...tickers]) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'chip';
+        chip.textContent = ticker ?? 'All';
+        chip.setAttribute('aria-pressed', String(ticker === newsFilter));
+        chip.addEventListener('click', () => { newsFilter = ticker; renderNews(news); });
+        filter.appendChild(chip);
+      }
+    }
+
+    const list = $('news-list');
+    list.replaceChildren();
+    for (const item of news.filter((n) => !newsFilter || n.tickers.includes(newsFilter))) {
+      const li = document.createElement('li');
+      const link = document.createElement('a');
+      link.href = item.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = item.headline;
+      const meta = document.createElement('div');
+      meta.className = 'news-meta';
+      for (const ticker of item.tickers) {
+        const tag = document.createElement('span');
+        tag.className = 'ticker-tag';
+        tag.textContent = ticker;
+        meta.appendChild(tag);
+      }
+      const when = document.createElement('span');
+      when.textContent = [item.source, timeAgo(item.publishedAt)].filter(Boolean).join(' · ');
+      meta.appendChild(when);
+      if (item.sentiment !== 'neutral') {
+        const mood = document.createElement('span');
+        mood.className = `sentiment ${item.sentiment}`;
+        mood.textContent = item.sentiment === 'positive' ? '▲ Positive' : '▼ Negative';
+        meta.appendChild(mood);
+      }
+      li.append(link, meta);
+      list.appendChild(li);
+    }
+    $('news-empty').hidden = news.length > 0;
+    $('news-badge').textContent = news.length;
+    $('news-badge').hidden = news.length === 0;
+  }
+
+  async function loadRecommendations() {
+    const request = ++recommendationsRequest;
+    if (lastPortfolio.rows.length === 0) {
+      lastRecommendations = null;
+      return;
+    }
+    if (!lastRecommendations) $('insights-status').textContent = 'Checking the news…';
+    try {
+      const { status, data } = await api('GET', '/api/recommendations');
+      if (request !== recommendationsRequest) return; // a newer request is on its way
+      if (status !== 200) throw new Error(data.error);
+      $('insights-status').textContent = '';
+      const json = JSON.stringify(data);
+      if (json === lastRecommendations) return;
+      lastRecommendations = json;
+      renderScore(data.score);
+      $('news-issue').textContent = data.newsIssue || '';
+      $('news-issue').hidden = !data.newsIssue;
+      renderInsights(data.insights);
+      renderNews(data.news);
+      const warnings = data.insights.filter((i) => i.severity === 'warning').length;
+      $('recommendations-badge').textContent = warnings;
+      $('recommendations-badge').hidden = warnings === 0;
+      $('recommendations-badge').title = `${warnings} warning${warnings === 1 ? '' : 's'}`;
+    } catch {
+      if (request === recommendationsRequest && !lastRecommendations) {
+        $('insights-status').textContent = "Couldn't load recommendations. The next refresh will try again.";
+      }
+    }
+  }
+
+  // Every change to the portfolio (prices, edits, syncs) can change the
+  // recommendations; batch bursts of renders into one request.
+  function scheduleRecommendations() {
+    clearTimeout(recommendationsTimer);
+    recommendationsTimer = setTimeout(loadRecommendations, 250);
+  }
+
+  // ---- Written summary and Claude's notes ----
+  // Loaded only while the Recommendations tab is open, and again only when the
+  // holdings themselves change (not on every price tick), because writing it may
+  // call a paid AI model. "Regenerate" asks for a new one.
+
+  let adviceFor = null; // the holdings the shown advice was written for
+  let adviceRequest = 0;
+
+  const holdingsSignature = () => JSON.stringify(lastPortfolio.rows.map((r) => [r.ticker, r.shares]));
+
+  function renderAdvice(advice) {
+    $('advice-summary').classList.remove('loading');
+    $('advice-summary').textContent = advice.summary || '';
+    let source;
+    if (advice.source === 'claude') {
+      const when = advice.generatedAt ? ` ${timeAgo(advice.generatedAt)}` : '';
+      source = `Summary and recommendations by Claude (${advice.model})${when}, from Folio's numbers. AI can make mistakes; the findings below show the working.`;
+    } else if (advice.aiIssue) {
+      source = `${advice.aiIssue} This summary was written from Folio's rules instead.`;
+    } else {
+      source = "Written from Folio's rules. Add ANTHROPIC_API_KEY to .env to have Claude write this summary and turn the findings below into specific recommendations.";
+    }
+    $('advice-source').textContent = source;
+    $('advice-refresh').hidden = !advice.aiConfigured;
+    aiRecommendations = advice.recommendations || [];
+    $('ai-dropped').textContent = advice.dropped
+      ? `Folio removed ${advice.dropped} of Claude's suggestions because ${advice.dropped === 1 ? 'it used a number' : 'they used numbers'} Folio couldn't verify.`
+      : '';
+    $('ai-dropped').hidden = !advice.dropped;
+    renderInsights();
+  }
+
+  async function loadAdvice({ fresh = false } = {}) {
+    if (lastPortfolio.rows.length === 0) return;
+    const signature = holdingsSignature();
+    if (!fresh && signature === adviceFor) return;
+    const request = ++adviceRequest;
+    $('advice-refresh').disabled = true;
+    $('advice-status').textContent = fresh ? 'Rewriting…' : 'Writing your summary…';
+    if (adviceFor === null) {
+      $('advice-summary').classList.add('loading');
+      $('advice-summary').textContent = "Reading your holdings and this week's headlines…";
+    }
+    try {
+      const { status, data } = await api('GET', fresh ? '/api/advice?refresh=1' : '/api/advice');
+      if (request !== adviceRequest) return; // a newer request is on its way
+      if (status !== 200) throw new Error(data.error);
+      adviceFor = signature;
+      renderAdvice(data);
+      $('advice-status').textContent = '';
+    } catch {
+      if (request === adviceRequest) $('advice-status').textContent = "Couldn't load the summary. Try again in a moment.";
+    } finally {
+      if (request === adviceRequest) $('advice-refresh').disabled = false;
+    }
+  }
+
+  $('advice-refresh').addEventListener('click', () => loadAdvice({ fresh: true }));
+
+  // ---- Tabs ----
+  // Follows the WAI-ARIA tabs pattern: arrow keys move between tabs, and the open
+  // tab is kept in the address (#recommendations, #news) so reload and back work.
+
+  const TABS = ['holdings', 'recommendations', 'news'];
+  let activeTab = 'holdings';
+
+  function showTab(name, { focus = false, updateAddress = true } = {}) {
+    if (!TABS.includes(name)) name = 'holdings';
+    activeTab = name;
+    for (const t of TABS) {
+      const selected = t === name;
+      $(`tab-${t}`).setAttribute('aria-selected', String(selected));
+      $(`tab-${t}`).tabIndex = selected ? 0 : -1;
+      $(`panel-${t}`).hidden = !selected;
+    }
+    if (focus) $(`tab-${name}`).focus();
+    if (updateAddress) {
+      history.replaceState(null, '', name === 'holdings' ? location.pathname + location.search : `#${name}`);
+    }
+    if (name === 'recommendations') loadAdvice();
+  }
+
+  TABS.forEach((t, i) => {
+    $(`tab-${t}`).addEventListener('click', () => showTab(t));
+    $(`tab-${t}`).addEventListener('keydown', (e) => {
+      const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: TABS.length - 1 }[e.key];
+      if (next === undefined) return;
+      e.preventDefault();
+      showTab(TABS[(next + TABS.length) % TABS.length], { focus: true });
+    });
+  });
+  window.addEventListener('hashchange', () => showTab(location.hash.slice(1), { updateAddress: false }));
+
   function render(portfolio) {
     const { rows, summary } = portfolio;
     lastPortfolio = portfolio;
@@ -686,8 +1263,13 @@
     $('empty-state').hidden = !empty;
     $('holdings-table').hidden = empty;
     $('head-actions').hidden = empty;
+    // Recommendations and news need something to work on.
+    $('tabs').hidden = empty;
+    if (empty && activeTab !== 'holdings') showTab('holdings');
+    if (activeTab === 'recommendations') loadAdvice();
     $('sync-btn').hidden = summary.accountsConnected === 0;
     $('disconnect-btn').hidden = summary.accountsConnected === 0;
+    scheduleRecommendations();
   }
 
   // fresh: true asks the server to skip its price cache. quiet: true (background
@@ -1017,6 +1599,7 @@
   // ---- Start ----
 
   (async () => {
+    showTab(location.hash.slice(1), { updateAddress: false });
     await loadPortfolio();
     // SnapTrade sends the user back here after they connect a brokerage.
     if (new URLSearchParams(location.search).get('brokerage') === 'connected') {

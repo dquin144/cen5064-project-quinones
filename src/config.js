@@ -13,6 +13,11 @@ function loadConfig(env = {}) {
     appUrl: (env.APP_URL || `http://localhost:${port}`).replace(/\/$/, ''),
     dbFile: env.DB_FILE || path.join(__dirname, '..', 'data', 'folio.db'),
     finnhubApiKey: env.FINNHUB_API_KEY || null,
+    // Optional: lets Claude write the portfolio summary and recommendations.
+    anthropic: Object.freeze({
+      apiKey: env.ANTHROPIC_API_KEY || null,
+      model: env.ANTHROPIC_MODEL || 'claude-haiku-5-5', // the cheapest current Claude model
+    }),
     snaptrade: Object.freeze({
       clientId: env.SNAPTRADE_CLIENT_ID || null,
       consumerKey: env.SNAPTRADE_CONSUMER_KEY || null,
