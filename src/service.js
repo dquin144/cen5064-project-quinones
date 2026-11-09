@@ -9,6 +9,7 @@ const {
   findConflicts,
   consolidateHoldings,
   summarizePortfolio,
+  allocatePortfolio,
 } = require('./domain');
 const data = require('./data');
 const snaptrade = require('./snaptrade');
@@ -150,6 +151,7 @@ function getPortfolio() {
     rows,
     pricesAsOf: asOfs[0] ?? null,
     summary: { ...summarizePortfolio(rows), accountsConnected: data.countBrokerageAccounts(APP_USER_ID) },
+    allocation: allocatePortfolio(rows),
     brokerageConfigured: snaptrade.isConfigured(),
     brokerageIssue,
   };

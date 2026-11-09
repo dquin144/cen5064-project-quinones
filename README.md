@@ -21,7 +21,7 @@ their portfolio without building spreadsheets.
 |---|----------|--------|
 | UC1 | **Build and maintain a portfolio by hand:** add a holding (ticker, shares, purchase price, purchase date), edit or remove it; invalid input is rejected | ✅ Working |
 | UC2 | **Import holdings from a brokerage:** connect a brokerage read-only (E*TRADE, Robinhood, Schwab, Fidelity, …), sync and disconnect | ✅ Working |
-| UC3 | **See how the portfolio is doing:** total value, gain/loss, allocation, diversification and concentration scores | 🟡 Live prices, value and gain/loss working; allocation and scores planned |
+| UC3 | **See how the portfolio is doing:** total value, gain/loss, allocation, diversification and concentration scores | 🟡 Live prices, value, gain/loss (total and per holding) and allocation by ticker working; scores planned |
 | UC4 | **Get news and recommendations for my holdings:** rule-based insights and news matched to what the user owns | ⏳ Planned |
 
 **Scope:** Folio runs locally for a single user, covers US stocks and ETFs, and
