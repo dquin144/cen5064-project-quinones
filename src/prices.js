@@ -1,6 +1,6 @@
 // Data tier (external API client): the only file that fetches market prices.
-// Yahoo Finance first (no key needed); tickers Yahoo can't price are retried on
-// Finnhub when FINNHUB_API_KEY is set. Quotes are cached briefly so page polling
+// Sources are tried in the order listed in PROVIDERS: Yahoo Finance first (no key
+// needed), then Finnhub when FINNHUB_API_KEY is set. Quotes are cached briefly so page polling
 // and repeated loads don't hit rate limits.
 
 const CACHE_MS = 60 * 1000;
@@ -47,13 +47,25 @@ async function fromFinnhub(ticker) {
   return { price, asOf: isoFromSeconds(body.t), source: 'finnhub' };
 }
 
+// Price sources, tried in order. Each one says when it can be used, so adding,
+// removing, or reordering a source means editing this list, not fetchQuote.
+const PROVIDERS = [
+  { name: 'yahoo', isEnabled: () => true, fetch: fromYahoo },
+  { name: 'finnhub', isEnabled: () => Boolean(process.env.FINNHUB_API_KEY), fetch: fromFinnhub },
+];
+
+// Returns the first quote an enabled provider can give; throws the last
+// provider's error if none can.
 async function fetchQuote(ticker) {
-  try {
-    return await fromYahoo(ticker);
-  } catch (yahooErr) {
-    if (!process.env.FINNHUB_API_KEY) throw yahooErr;
-    return fromFinnhub(ticker);
+  let lastErr = new Error('no price source configured');
+  for (const provider of PROVIDERS.filter((p) => p.isEnabled())) {
+    try {
+      return await provider.fetch(ticker);
+    } catch (err) {
+      lastErr = err;
+    }
   }
+  throw lastErr;
 }
 
 // Returns Map<ticker, { price, asOf, source }> for the tickers that could be priced.
