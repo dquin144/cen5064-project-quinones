@@ -21,7 +21,7 @@ their portfolio without building spreadsheets.
 |---|----------|--------|
 | UC1 | **Build and maintain a portfolio by hand:** add a holding (ticker, shares, purchase price, purchase date), edit or remove it; invalid input is rejected | ✅ Working |
 | UC2 | **Import holdings from a brokerage:** connect a brokerage read-only (E*TRADE, Robinhood, Schwab, Fidelity, …), sync and disconnect | ✅ Working |
-| UC3 | **See how the portfolio is doing:** total value, gain/loss, allocation, diversification and concentration scores | 🟡 Live prices, value and gain/loss working; allocation and scores planned |
+| UC3 | **See how the portfolio is doing:** total value, gain/loss, allocation, diversification and concentration scores | 🟡 Live prices, value, gain/loss (total and per holding) and allocation by ticker working; scores planned |
 | UC4 | **Get news and recommendations for my holdings:** rule-based insights and news matched to what the user owns | ⏳ Planned |
 
 **Scope:** Folio runs locally for a single user, covers US stocks and ETFs, and
@@ -94,7 +94,7 @@ Four tiers, each with its own files:
 |------|-------|---------------------------|
 | **Presentation** | `public/index.html`, `public/portfolio.html` | Landing page; portfolio dashboard (summary tiles, holdings table, purchase history); dialogs to add, edit and remove holdings, connect a brokerage, and resolve sync conflicts. Sends input to the server as JSON and renders the result. **No business rules and no storage access.** |
 | **Service** | `server.js` (HTTP entry), `src/service.js` | Orchestrates each use case: add/edit/remove a holding, build the portfolio view, connect/sync/disconnect a brokerage, resolve sync conflicts. Asks the Domain to decide and the Data tier to load and save. `server.js` only parses requests and maps results and errors to HTTP status codes. |
-| **Domain** | `src/domain.js` | The rules, as pure functions: what makes a holding valid (ticker format, shares and price > 0, date not in the future); merging purchases into one row per ticker; value, total value and gain/loss; applying the user's changes to synced holdings and detecting conflicts with fresh brokerage data. No I/O. *Planned:* allocation, diversification score, rule-based insights, matching news to holdings. |
+| **Domain** | `src/domain.js` | The rules, as pure functions: what makes a holding valid (ticker format, shares and price > 0, date not in the future); merging purchases into one row per ticker; value, total value and gain/loss (per holding and overall); allocation by ticker; applying the user's changes to synced holdings and detecting conflicts with fresh brokerage data. No I/O. *Planned:* diversification score, rule-based insights, matching news to holdings. |
 | **Data** | `src/data.js`, `src/snaptrade.js`, `src/prices.js` | `data.js`: all SQLite access (holdings, brokerage accounts, positions, buy history, the user's changes to synced holdings). `snaptrade.js`: the only code that reads the SnapTrade keys or calls SnapTrade; converts its data into Folio's shape. `prices.js`: the only code that fetches market prices (Yahoo Finance, with Finnhub as a backup), with a one-minute cache. *Planned:* `news.js`, a client for a news API. |
 
 **Dependency rule:** dependencies point one way: Presentation → Service →

@@ -136,12 +136,18 @@ function consolidateHoldings(holdings, buys = []) {
     const purchases = history.slice().reverse().sort(byDateDesc);
     const shares = g.holdings.reduce((sum, h) => sum + h.shares, 0);
     const currentPrice = g.holdings.find((h) => h.currentPrice > 0)?.currentPrice ?? null;
+    const costBasis = g.holdings.reduce((sum, h) => sum + h.shares * h.purchasePrice, 0);
+    const value = currentPrice === null ? null : shares * currentPrice;
+    // Gain/loss since purchase; null when there's no market price to compare against.
+    const gainLoss = value === null ? null : value - costBasis;
     return {
       ticker,
       shares,
-      costBasis: g.holdings.reduce((sum, h) => sum + h.shares * h.purchasePrice, 0),
+      costBasis,
       currentPrice,
-      value: currentPrice === null ? null : shares * currentPrice,
+      value,
+      gainLoss,
+      gainLossPercent: gainLoss === null || costBasis <= 0 ? null : (gainLoss / costBasis) * 100,
       purchases,
       holdings: g.holdings.slice().reverse().sort(byDateDesc),
     };
@@ -164,6 +170,23 @@ function summarizePortfolio(rows) {
   };
 }
 
+// Share of total value per ticker, largest first. Only priced rows count, since an
+// unpriced holding has no value to compare. Past maxParts, the smallest are folded
+// into one "Other" part so the breakdown stays readable.
+function allocatePortfolio(rows, maxParts = 8) {
+  const priced = rows.filter((r) => r.value > 0).sort((a, b) => b.value - a.value);
+  const total = priced.reduce((sum, r) => sum + r.value, 0);
+  let parts = priced.map((r) => ({ label: r.ticker, value: r.value }));
+  if (parts.length > maxParts) {
+    const rest = parts.slice(maxParts - 1);
+    parts = [
+      ...parts.slice(0, maxParts - 1),
+      { label: 'Other', value: rest.reduce((sum, p) => sum + p.value, 0), count: rest.length },
+    ];
+  }
+  return parts.map((p) => ({ ...p, percent: (p.value / total) * 100 }));
+}
+
 module.exports = {
   validateHolding,
   validatePositionEdit,
@@ -171,4 +194,5 @@ module.exports = {
   findConflicts,
   consolidateHoldings,
   summarizePortfolio,
+  allocatePortfolio,
 };

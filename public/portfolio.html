@@ -212,6 +212,40 @@
     color: var(--ink);
   }
 
+  td.gain { color: var(--sage-dark); }
+  td.loss { color: var(--error); }
+  td .pct { margin-left: 4px; font-size: 0.85rem; }
+
+  /* Allocation: ranked bars, one per ticker, largest first */
+  .alloc-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .alloc-list li {
+    display: grid;
+    grid-template-columns: 5rem 1fr 4rem 7rem;
+    gap: 12px;
+    align-items: center;
+    padding: 8px 0;
+    font-size: 0.95rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .alloc-list li:hover { background: var(--paper); }
+  .alloc-list .num { text-align: right; }
+  .alloc-bar {
+    display: block;
+    height: 10px;
+    min-width: 2px;
+    background: var(--sage);
+    border-radius: 0 4px 4px 0; /* rounded data end, square at the baseline */
+  }
+  .alloc-note {
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+    margin: 12px 0 0;
+  }
+
   .visually-hidden {
     position: absolute;
     width: 1px;
@@ -297,6 +331,9 @@
   }
   @media (max-width: 780px) {
     .summary { grid-template-columns: 1fr; }
+    /* The holdings table already lists each value; keep the bars room to read. */
+    .alloc-list li { grid-template-columns: 4rem 1fr 4rem; }
+    .alloc-list .alloc-value { display: none; }
     .fields { grid-template-columns: 1fr; }
   }
 </style>
@@ -362,6 +399,7 @@
             <tr>
               <th>Ticker</th>
               <th class="num">Value</th>
+              <th class="num">Gain/loss</th>
               <th class="num">Price</th>
               <th class="num">Shares</th>
               <th>Purchase price</th>
@@ -371,6 +409,14 @@
           <tbody id="holdings-body"></tbody>
         </table>
       </div>
+    </section>
+
+    <section class="card" id="allocation" aria-labelledby="allocation-title" hidden>
+      <div class="section-head">
+        <h2 id="allocation-title">Allocation</h2>
+      </div>
+      <ul class="alloc-list" id="allocation-list" aria-label="Share of portfolio value by ticker"></ul>
+      <p class="alloc-note" id="allocation-note" hidden></p>
     </section>
   </main>
 
@@ -517,24 +563,28 @@
   }
 
   // "+$1,234.56 (+12.3%)" in green, or "−$50.00 (−2.1%)" in red. The sign carries
-  // the meaning too, so it doesn't rely on color alone.
-  function renderGainLoss(summary) {
-    const el = $('gain-loss');
+  // the meaning too, so it doesn't rely on color alone. Fills el and returns false
+  // when there's nothing to show.
+  function showGainLoss(el, amount, percent) {
     el.classList.remove('gain', 'loss');
     el.replaceChildren();
-    if (summary.gainLossPercent === null) {
+    if (amount === null || percent === null) {
       el.textContent = '—';
-    } else {
-      const g = summary.gainLoss;
-      const sign = g > 0 ? '+' : g < 0 ? '−' : '';
-      el.textContent = sign + money.format(Math.abs(g));
-      const pct = document.createElement('span');
-      pct.className = 'pct';
-      pct.textContent = `(${sign}${Math.abs(summary.gainLossPercent).toFixed(2)}%)`;
-      el.appendChild(pct);
-      if (g > 0) el.classList.add('gain');
-      if (g < 0) el.classList.add('loss');
+      return false;
     }
+    const sign = amount > 0 ? '+' : amount < 0 ? '−' : '';
+    el.textContent = sign + money.format(Math.abs(amount));
+    const pct = document.createElement('span');
+    pct.className = 'pct';
+    pct.textContent = `(${sign}${Math.abs(percent).toFixed(2)}%)`;
+    el.appendChild(pct);
+    if (amount > 0) el.classList.add('gain');
+    if (amount < 0) el.classList.add('loss');
+    return true;
+  }
+
+  function renderGainLoss(summary) {
+    showGainLoss($('gain-loss'), summary.gainLoss, summary.gainLossPercent);
     const n = summary.unpricedCount;
     for (const id of ['total-value-note', 'gain-loss-note']) {
       $(id).textContent = n ? `Excludes ${n} holding${n === 1 ? '' : 's'} without a market price` : '';
@@ -554,6 +604,41 @@
     }
   }
 
+  // Bars are scaled to the largest part so the parts compare on one baseline;
+  // the printed percentage is the share of total value.
+  function renderAllocation(allocation, unpricedCount) {
+    const list = $('allocation-list');
+    list.replaceChildren();
+    const largest = allocation[0]?.value ?? 0;
+    for (const part of allocation) {
+      const li = document.createElement('li');
+      const name = part.count ? `Other (${part.count} tickers)` : part.label;
+      li.title = `${name}: ${money.format(part.value)}, ${part.percent.toFixed(1)}% of total value`;
+      const label = document.createElement('span');
+      label.textContent = part.label;
+      const bar = document.createElement('span');
+      bar.className = 'alloc-bar';
+      bar.style.width = `${(part.value / largest) * 100}%`;
+      bar.setAttribute('aria-hidden', 'true');
+      const pct = document.createElement('span');
+      pct.className = 'num';
+      pct.textContent = `${part.percent.toFixed(1)}%`;
+      const value = document.createElement('span');
+      value.className = 'num muted alloc-value';
+      value.textContent = money.format(part.value);
+      li.append(label, document.createElement('span'), pct, value);
+      li.children[1].appendChild(bar);
+      list.appendChild(li);
+    }
+    $('allocation').hidden = allocation.length === 0;
+    const notes = [];
+    const other = allocation.find((p) => p.count);
+    if (other) notes.push(`Other combines your ${other.count} smallest holdings.`);
+    if (unpricedCount) notes.push(`Excludes ${unpricedCount} holding${unpricedCount === 1 ? '' : 's'} without a market price.`);
+    $('allocation-note').textContent = notes.join(' ');
+    $('allocation-note').hidden = notes.length === 0;
+  }
+
   function render(portfolio) {
     const { rows, summary } = portfolio;
     lastPortfolio = portfolio;
@@ -564,6 +649,7 @@
     const anyPriced = summary.unpricedCount < summary.holdingsCount;
     $('total-value').textContent = anyPriced ? money.format(summary.totalValue) : '—';
     renderGainLoss(summary);
+    renderAllocation(portfolio.allocation || [], summary.unpricedCount);
     const asOf = portfolio.pricesAsOf ? new Date(portfolio.pricesAsOf) : null;
     $('prices-as-of').textContent = asOf
       ? `Prices as of ${asOf.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
@@ -578,6 +664,11 @@
       const tr = document.createElement('tr');
       cell(tr, row.ticker);
       moneyCell(tr, row.value);
+      cell(tr, '', 'num');
+      if (!showGainLoss(tr.lastChild, row.gainLoss, row.gainLossPercent)) {
+        tr.lastChild.classList.add('muted');
+        tr.lastChild.title = NO_PRICE_TITLE;
+      }
       moneyCell(tr, row.currentPrice);
       cell(tr, qty(row.shares), 'num');
       cell(tr, row.purchases.length === 1 ? purchaseText(row.purchases[0]) : purchaseHistory(row));
