@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Folio: log in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #FAF7F2;
+    --card: #FFFEFB;
+    --ink: #1C2B22;
+    --ink-soft: #4A554D;
+    --sage: #3F6B4E;
+    --sage-dark: #2E5039;
+    --error: #A2402E;
+    --line: #DCD5C8;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  nav {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 28px;
+  }
+  .logo {
+    font-family: 'Newsreader', serif;
+    font-size: 1.35rem;
+    font-style: italic;
+    color: var(--ink);
+    text-decoration: none;
+  }
+
+  main {
+    max-width: 420px;
+    margin: 24px auto 64px;
+    padding: 0 16px;
+  }
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 28px;
+    background: var(--card);
+  }
+  h1 {
+    font-family: 'Newsreader', serif;
+    font-weight: 500;
+    font-size: 1.8rem;
+    margin: 0 0 6px;
+  }
+  .lead { color: var(--ink-soft); margin: 0 0 24px; line-height: 1.5; }
+
+  .field { margin-bottom: 16px; }
+  label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 6px; }
+  input {
+    width: 100%;
+    font: inherit;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--ink);
+  }
+  input:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; }
+  input[aria-invalid="true"] { border-color: var(--error); }
+  .hint { font-size: 0.78rem; color: var(--ink-soft); margin-top: 4px; }
+  .error { font-size: 0.82rem; color: var(--error); margin-top: 4px; min-height: 0; }
+  .form-error { margin: 0 0 16px; }
+
+  .btn {
+    width: 100%;
+    font: inherit;
+    font-weight: 500;
+    padding: 11px 20px;
+    border-radius: 3px;
+    border: 1px solid transparent;
+    background: var(--sage);
+    color: var(--paper);
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--sage-dark); }
+  .btn:disabled { opacity: 0.6; cursor: wait; }
+  .btn:focus-visible, .link-btn:focus-visible, a:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+
+  .switch { margin: 20px 0 0; text-align: center; font-size: 0.92rem; color: var(--ink-soft); }
+  .link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--sage-dark);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+  <nav><a href="index.html" class="logo">Folio</a></nav>
+
+  <main>
+    <div class="card">
+      <h1 id="title">Log in</h1>
+      <p class="lead" id="lead">Welcome back. Log in to see your portfolio.</p>
+
+      <form id="form" novalidate>
+        <div class="field">
+          <label for="username">Username</label>
+          <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required />
+          <div class="error" id="username-error"></div>
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required />
+          <div class="hint" id="password-hint" hidden>At least 8 characters.</div>
+          <div class="error" id="password-error"></div>
+        </div>
+        <p class="error form-error" id="form-error" role="alert"></p>
+        <button type="submit" class="btn" id="submit">Log in</button>
+      </form>
+
+      <p class="switch" id="switch-text">
+        <span id="switch-prompt">New to Folio?</span>
+        <button type="button" class="link-btn" id="switch-btn">Create an account</button>
+      </p>
+    </div>
+  </main>
+
+<script>
+  // Presentation only: sends the form to the server and goes on to the portfolio.
+  const $ = (id) => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  // Only same-site paths, so a link can't send someone elsewhere after logging in.
+  const nextParam = params.get('next') || '';
+  const next = /^\/(?!\/)/.test(nextParam) ? nextParam : '/portfolio.html';
+  let mode = params.get('mode') === 'signup' ? 'signup' : 'login';
+
+  const TEXT = {
+    login: {
+      title: 'Log in', lead: 'Welcome back. Log in to see your portfolio.', submit: 'Log in',
+      prompt: 'New to Folio?', switchTo: 'Create an account', autocomplete: 'current-password',
+    },
+    signup: {
+      title: 'Create your account', lead: 'Pick a username and password. Your portfolio is private to your account.', submit: 'Create account',
+      prompt: 'Already have an account?', switchTo: 'Log in', autocomplete: 'new-password',
+    },
+  };
+
+  function showErrors(errors = {}, message = '') {
+    for (const field of ['username', 'password']) {
+      $(`${field}-error`).textContent = errors[field] || '';
+      $(field).setAttribute('aria-invalid', String(Boolean(errors[field])));
+    }
+    $('form-error').textContent = message;
+    $('password-hint').hidden = mode !== 'signup' || Boolean(errors.password); // the error says it already
+  }
+
+  function setMode(newMode) {
+    mode = newMode;
+    const t = TEXT[mode];
+    $('title').textContent = t.title;
+    $('lead').textContent = t.lead;
+    $('submit').textContent = t.submit;
+    $('switch-prompt').textContent = t.prompt;
+    $('switch-btn').textContent = t.switchTo;
+    $('password').autocomplete = t.autocomplete;
+    $('password-hint').hidden = mode !== 'signup';
+    document.title = `Folio: ${t.title.toLowerCase()}`;
+    showErrors();
+    const url = new URL(location.href);
+    if (mode === 'signup') url.searchParams.set('mode', 'signup'); else url.searchParams.delete('mode');
+    history.replaceState(null, '', url);
+  }
+
+  $('switch-btn').addEventListener('click', () => {
+    setMode(mode === 'login' ? 'signup' : 'login');
+    $('username').focus();
+  });
+
+  $('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    showErrors();
+    $('submit').disabled = true;
+    try {
+      const res = await fetch(mode === 'signup' ? '/api/auth/register' : '/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: $('username').value, password: $('password').value }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        location.href = next;
+        return;
+      }
+      const fields = data.errors || {};
+      showErrors(fields, Object.keys(fields).length ? '' : data.error || 'Something went wrong. Try again.');
+      ($('username-error').textContent ? $('username') : $('password')).focus();
+    } catch {
+      showErrors({}, "Couldn't reach Folio. Is the server running? (npm start)");
+    } finally {
+      $('submit').disabled = false;
+    }
+  });
+
+  // Already logged in: go straight on.
+  fetch('/api/auth/me').then((r) => r.json()).then(({ user }) => { if (user) location.replace(next); }).catch(() => {});
+
+  setMode(mode);
+</script>
+</body>
+</html>

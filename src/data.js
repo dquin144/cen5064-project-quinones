@@ -5,13 +5,33 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
 const SCHEMA = `
+  -- user_id is the owning account's id as text ('local' for holdings saved
+  -- before accounts existed), the same value brokerage tables call app_user_id.
   CREATE TABLE IF NOT EXISTS holdings (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker         TEXT NOT NULL,
     shares         REAL NOT NULL,
     purchase_price REAL NOT NULL,
     purchase_date  TEXT NOT NULL,
-    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    user_id        TEXT NOT NULL DEFAULT 'local'
+  );
+
+  -- Accounts. password_hash is a salted scrypt hash (see auth.js), never the password.
+  CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Logged-in sessions. Only a SHA-256 hash of each session token is stored, so
+  -- reading the database doesn't let anyone use a session.
+  CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
   -- One SnapTrade user per Folio user. user_secret is plain text: fine for
@@ -69,6 +89,7 @@ const SCHEMA = `
 // won't add them to an existing database, so add any that are missing.
 const ADDED_COLUMNS = [
   { table: 'brokerage_positions', column: 'price', type: 'REAL' },
+  { table: 'holdings', column: 'user_id', type: "TEXT NOT NULL DEFAULT 'local'" },
 ];
 
 function migrate(db) {
@@ -102,10 +123,12 @@ function closeDb() {
   db = null;
 }
 
-function loadHoldings() {
+// Holdings belong to one user; userId defaults to 'local' (see service.js).
+
+function loadHoldings(userId = 'local') {
   return getDb()
-    .prepare('SELECT id, ticker, shares, purchase_price, purchase_date FROM holdings ORDER BY id')
-    .all()
+    .prepare('SELECT id, ticker, shares, purchase_price, purchase_date FROM holdings WHERE user_id = ? ORDER BY id')
+    .all(userId)
     .map((r) => ({
       id: r.id,
       ticker: r.ticker,
@@ -115,24 +138,24 @@ function loadHoldings() {
     }));
 }
 
-function saveHolding(h) {
+function saveHolding(h, userId = 'local') {
   const { lastInsertRowid } = getDb()
-    .prepare('INSERT INTO holdings (ticker, shares, purchase_price, purchase_date) VALUES (?, ?, ?, ?)')
-    .run(h.ticker, h.shares, h.purchasePrice, h.purchaseDate);
+    .prepare('INSERT INTO holdings (ticker, shares, purchase_price, purchase_date, user_id) VALUES (?, ?, ?, ?, ?)')
+    .run(h.ticker, h.shares, h.purchasePrice, h.purchaseDate, userId);
   return { id: Number(lastInsertRowid), ...h };
 }
 
-// Returns true if a holding with that id existed and was changed.
-function updateHolding(id, h) {
+// Returns true if this user had a holding with that id and it was changed.
+function updateHolding(id, h, userId = 'local') {
   const { changes } = getDb()
-    .prepare('UPDATE holdings SET ticker = ?, shares = ?, purchase_price = ?, purchase_date = ? WHERE id = ?')
-    .run(h.ticker, h.shares, h.purchasePrice, h.purchaseDate, id);
+    .prepare('UPDATE holdings SET ticker = ?, shares = ?, purchase_price = ?, purchase_date = ? WHERE id = ? AND user_id = ?')
+    .run(h.ticker, h.shares, h.purchasePrice, h.purchaseDate, id, userId);
   return changes > 0;
 }
 
-// Returns true if a holding with that id existed and was removed.
-function deleteHolding(id) {
-  return getDb().prepare('DELETE FROM holdings WHERE id = ?').run(id).changes > 0;
+// Returns true if this user had a holding with that id and it was removed.
+function deleteHolding(id, userId = 'local') {
+  return getDb().prepare('DELETE FROM holdings WHERE id = ? AND user_id = ?').run(id, userId).changes > 0;
 }
 
 // ---- Brokerage (SnapTrade) ----
@@ -260,6 +283,66 @@ function countBrokerageAccounts(appUserId) {
     .get(appUserId).n;
 }
 
+// ---- Accounts and sessions ----
+
+const toUser = (r) => (r ? { id: r.id, username: r.username, passwordHash: r.password_hash } : null);
+
+// Creates an account and returns it, or null if the username is taken (any case).
+// The first account ever created also takes over the data saved before accounts
+// existed (owned by 'local'), so upgrading Folio doesn't lose anyone's portfolio.
+function createUser(username, passwordHash) {
+  const db = getDb();
+  db.exec('BEGIN');
+  try {
+    const first = db.prepare('SELECT COUNT(*) AS n FROM users').get().n === 0;
+    const { changes, lastInsertRowid } = db
+      .prepare('INSERT INTO users (username, password_hash) VALUES (?, ?) ON CONFLICT (username) DO NOTHING')
+      .run(username, passwordHash);
+    const id = Number(lastInsertRowid);
+    if (changes > 0 && first) claimLocalData(db, String(id));
+    db.exec('COMMIT');
+    return changes > 0 ? { id, username } : null;
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+function claimLocalData(db, userId) {
+  db.prepare("UPDATE holdings SET user_id = ? WHERE user_id = 'local'").run(userId);
+  for (const table of ['brokerage_users', 'brokerage_accounts', 'brokerage_overrides']) {
+    db.prepare(`UPDATE ${table} SET app_user_id = ? WHERE app_user_id = 'local'`).run(userId);
+  }
+}
+
+// { id, username, passwordHash } or null. Usernames match in any case.
+function findUserByUsername(username) {
+  return toUser(getDb().prepare('SELECT id, username, password_hash FROM users WHERE username = ?').get(username));
+}
+
+function createSession(tokenHash, userId, expiresAt) {
+  getDb()
+    .prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+    .run(tokenHash, userId, expiresAt);
+}
+
+// The session's user { id, username } if the session exists and hasn't expired.
+function findSessionUser(tokenHash, now) {
+  const row = getDb()
+    .prepare(`SELECT u.id, u.username FROM sessions s JOIN users u ON u.id = s.user_id
+              WHERE s.token_hash = ? AND s.expires_at > ?`)
+    .get(tokenHash, now);
+  return row ? { id: row.id, username: row.username } : null;
+}
+
+function deleteSession(tokenHash) {
+  getDb().prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
+}
+
+function deleteExpiredSessions(now) {
+  getDb().prepare('DELETE FROM sessions WHERE expires_at <= ?').run(now);
+}
+
 module.exports = {
   configure,
   loadHoldings,
@@ -276,5 +359,11 @@ module.exports = {
   deleteOverrides,
   loadBrokerageBuys,
   countBrokerageAccounts,
+  createUser,
+  findUserByUsername,
+  createSession,
+  findSessionUser,
+  deleteSession,
+  deleteExpiredSessions,
   closeDb,
 };
