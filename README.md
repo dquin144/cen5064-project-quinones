@@ -448,8 +448,8 @@ recommendations (ADR-006), the value-over-time chart with an index comparison
 |-------|---------|-----------|----------|
 | 8 | Midterm: merge open work, docs current | Midterm docs and ADRs in place (merged Oct 11); first live stock prices | — |
 | 9–10 | Live prices, allocation breakdown, per-holding gain/loss | Live prices (Yahoo Finance, Finnhub backup); SnapTrade failures handled without breaking the app; per-holding gain/loss and allocation; Open/Closed refactor of the price sources | UC2, UC3 |
-| 11–12 | Portfolio scores (diversification, concentration) and news for holdings | Diversification score and concentration risk; news matched to holdings; rule-based findings, written up by Claude with every number checked; Singleton config | UC3, UC4 |
-| 13–14 | Recommendations/insights, login, buffer for anything that slipped | Accounts and login with a private portfolio each (done in week 11); value-over-time, gain/loss and allocation charts; persistence test; peer-review fixes; CSV import/export; index comparison | UC1, UC3, UC5 |
+| 11–12 | Portfolio scores (diversification, concentration) and news for holdings | Diversification score and concentration risk; news matched to holdings; rule-based findings, written up by Claude with every number checked; Singleton config; accounts and login with a private portfolio each (planned for 13–14, done in week 11); value-over-time, gain/loss and allocation charts and a persistence test | UC3, UC4, UC5 |
+| 13–14 | Recommendations/insights, login, buffer for anything that slipped | Recommendations and login were already done, so: every peer-review point fixed; CSV import/export; comparison with the S&P 500 and other indexes | UC1, UC3 |
 | 15–16 | Polish, final docs, final deliverable | Final documentation update (this README, ADR-008); final deliverable | — |
 
 **Risks**
@@ -500,9 +500,11 @@ Decisions live in [`docs/adr/`](docs/adr/).
 - **Week 11 (Nov 2):** Singleton pattern for the app config; recommendations
   and news for holdings (UC4), with Claude-written advice checked against
   Folio's numbers; accounts and login with a private portfolio each (UC5).
-- **Week 12 (Nov 9):** The rest of weeks 10–11 merged into main, with a test and README
-  fix after the merge; first final-round peer review.
-- **Week 13 (Nov 16):** Value-over-time, gain/loss and allocation charts, and a
-  test that data survives a restart; second final-round peer review; every
-  peer-review point fixed; CSV import/export; comparison with the S&P 500 and
-  other indexes; final documentation update and ADR-008.
+  This week's work and week 10's were merged into main late Sunday night, with a
+  test and README fix after the merge.
+- **Week 12 (Nov 9):** Value-over-time, gain/loss and allocation charts, and a
+  test that data survives a restart (finished and merged late Sunday night);
+  first final-round peer review.
+- **Week 13 (Nov 16):** Second final-round peer review; every peer-review point
+  fixed; CSV import/export; comparison with the S&P 500 and other indexes;
+  final documentation update and ADR-008.
