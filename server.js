@@ -150,7 +150,10 @@ function createServer(config = getConfig()) {
       return sendJson(res, 200, await service.getPortfolio(userId, { fresh }));
     }
     if (route === 'GET /api/history') {
-      return sendJson(res, 200, await service.getValueHistory(userId, { range: searchParams.get('range') ?? '1y' }));
+      return sendJson(res, 200, await service.getValueHistory(userId, {
+        range: searchParams.get('range') ?? '1y',
+        compare: searchParams.get('compare'),
+      }));
     }
     if (route === 'GET /api/recommendations') {
       return sendJson(res, 200, await service.getRecommendations(userId, { fresh }));

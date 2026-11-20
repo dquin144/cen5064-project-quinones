@@ -303,6 +303,7 @@
     --chart-muted: #7C786F;    /* axis tick labels */
     --series-value: #3F6B4E;   /* portfolio value (the line the story is about) */
     --series-invested: #96918A;/* amount invested (the reference line) */
+    --series-benchmark: #2a78d6;/* the same money in an index fund (dashed; validated vs. value: CVD ΔE 20.6) */
     --bar-gain: #2E5039;
     --bar-loss: #D9694C;
     /* Allocation parts, in fixed order (validated: adjacent CVD ΔE >= 9) */
@@ -338,6 +339,10 @@
   }
   .legend li { display: flex; align-items: center; gap: 6px; }
   .legend .key-line { width: 14px; height: 2px; border-radius: 1px; display: inline-block; }
+  /* The comparison line is dashed on the chart, so its key is too. */
+  .key-line.dashed {
+    background: repeating-linear-gradient(90deg, var(--series-benchmark) 0 4px, transparent 4px 7px) !important;
+  }
   .legend .key-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 
   .chart { position: relative; transition: opacity 0.15s ease; }
@@ -394,6 +399,17 @@
   .segmented button:hover { color: var(--ink); background: var(--paper); }
   .segmented button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
   .segmented button:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; }
+  .compare-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: -6px 0 16px;
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+  }
+  .compare-row .segmented { flex-wrap: wrap; border-radius: 16px; }
+  .chart-stat .sub { font-size: 0.8rem; color: var(--ink-soft); }
 
   /* "Show as table": the same numbers as each chart, without hovering */
   .chart-table { margin-top: 12px; font-size: 0.85rem; }
@@ -889,6 +905,16 @@
             <button type="button" data-range="5y" aria-pressed="false">5Y</button>
           </div>
         </div>
+        <div class="compare-row">
+          <span id="compare-label">Compare with</span>
+          <div class="segmented" id="history-compare" role="group" aria-labelledby="compare-label">
+            <button type="button" data-compare="" aria-pressed="true">None</button>
+            <button type="button" data-compare="sp500" aria-pressed="false">S&amp;P 500</button>
+            <button type="button" data-compare="nasdaq100" aria-pressed="false">Nasdaq-100</button>
+            <button type="button" data-compare="dow" aria-pressed="false">Dow</button>
+            <button type="button" data-compare="total" aria-pressed="false">Total market</button>
+          </div>
+        </div>
         <div class="chart-head-stats" id="history-stats" hidden>
           <div class="chart-stat">
             <div class="label" id="history-gain-label">Gain over this period</div>
@@ -898,10 +924,16 @@
             <div class="label">Added in this period</div>
             <div class="value" id="history-added"></div>
           </div>
+          <div class="chart-stat" id="compare-stat" hidden>
+            <div class="label" id="compare-stat-label"></div>
+            <div class="value" id="compare-gain"></div>
+            <div class="sub" id="compare-diff"></div>
+          </div>
         </div>
         <ul class="legend" id="history-legend" hidden>
           <li><span class="key-line" style="background: var(--series-value)"></span>Market value</li>
           <li><span class="key-line" style="background: var(--series-invested)"></span>Amount invested</li>
+          <li id="compare-legend" hidden><span class="key-line dashed"></span><span id="compare-legend-name"></span></li>
         </ul>
         <div class="chart" id="history-chart"></div>
         <p class="alloc-note" id="history-note" hidden></p>
@@ -909,7 +941,7 @@
           <summary>Show as table</summary>
           <div class="table-scroll">
             <table>
-              <thead><tr><th>Date</th><th class="num">Market value</th><th class="num">Invested</th><th class="num">Gain/loss</th></tr></thead>
+              <thead><tr><th>Date</th><th class="num">Market value</th><th class="num">Invested</th><th class="num">Gain/loss</th><th class="num" id="compare-col" hidden></th></tr></thead>
               <tbody id="history-table-body"></tbody>
             </table>
           </div>
@@ -1265,6 +1297,10 @@ VOO,2,"$412.50",3/8/2025</div>
   const HISTORY_RANGE_KEY = 'folio.historyRange';
   let historyRange = '1y';
   try { historyRange = localStorage.getItem(HISTORY_RANGE_KEY) || '1y'; } catch { /* storage blocked */ }
+  // The index fund to compare with ('' for none), remembered the same way.
+  const HISTORY_COMPARE_KEY = 'folio.historyCompare';
+  let historyCompare = '';
+  try { historyCompare = localStorage.getItem(HISTORY_COMPARE_KEY) || ''; } catch { /* storage blocked */ }
   let lastHistory = null;
   let historyRequest = 0;
   let historyTimer = null;
@@ -1276,8 +1312,16 @@ VOO,2,"$412.50",3/8/2025</div>
     for (const btn of $('history-range').querySelectorAll('button')) {
       btn.setAttribute('aria-pressed', String(btn.dataset.range === historyRange));
     }
+    for (const btn of $('history-compare').querySelectorAll('button')) {
+      btn.setAttribute('aria-pressed', String(btn.dataset.compare === historyCompare));
+    }
   }
   markRange();
+
+  const signedMoney = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + money.format(Math.abs(n));
+  // The comparison to show: the fund's name, if the server sent its line.
+  const comparedName = (history) => (history.compare && history.points.every((p) => typeof p.benchmark === 'number')
+    ? history.compare.name : null);
 
   function drawHistory() {
     if (!lastHistory || $('history-chart').clientWidth === 0) return;
@@ -1286,6 +1330,7 @@ VOO,2,"$412.50",3/8/2025</div>
     FolioCharts.valueChart($('history-chart'), points, {
       range,
       tooltip: historyTip,
+      benchmarkName: comparedName(lastHistory),
       emptyText: allMissing
         ? "Couldn't load price history right now. Try again in a moment."
         : 'Not enough history yet. The chart fills in after your holdings have been through a full trading day.',
@@ -1311,8 +1356,32 @@ VOO,2,"$412.50",3/8/2025</div>
       const el = $('history-gain');
       el.classList.toggle('gain', gain > 0);
       el.classList.toggle('loss', gain < 0);
-      el.textContent = (gain > 0 ? '+' : gain < 0 ? '−' : '') + money.format(Math.abs(gain));
+      el.textContent = signedMoney(gain);
       $('history-added').textContent = money.format(added);
+    }
+
+    // The same money in the index fund: its gain over the period, measured the
+    // same way (money added isn't a gain), and how far ahead or behind you are.
+    const fundName = comparedName(history);
+    const comparing = enough && fundName !== null;
+    $('compare-stat').hidden = !comparing;
+    $('compare-legend').hidden = !comparing;
+    $('compare-col').hidden = !comparing;
+    if (comparing) {
+      const first = points[0];
+      const last = points.at(-1);
+      const gain = (last.value - last.invested) - (first.value - first.invested);
+      const fundGain = (last.benchmark - last.invested) - (first.benchmark - first.invested);
+      const diff = gain - fundGain;
+      $('compare-stat-label').textContent = `Same money in the ${fundName}`;
+      $('compare-gain').textContent = signedMoney(fundGain);
+      $('compare-gain').classList.toggle('gain', fundGain > 0);
+      $('compare-gain').classList.toggle('loss', fundGain < 0);
+      $('compare-diff').textContent = Math.abs(diff) < 0.5
+        ? 'About the same as you'
+        : `You're ${money.format(Math.abs(diff))} ${diff > 0 ? 'ahead' : 'behind'}`;
+      $('compare-legend-name').textContent = `Same money in the ${fundName} (${history.compare.ticker})`;
+      $('compare-col').textContent = fundName;
     }
 
     const body = $('history-table-body');
@@ -1323,7 +1392,8 @@ VOO,2,"$412.50",3/8/2025</div>
       cell(tr, money.format(p.value), 'num');
       cell(tr, money.format(p.invested), 'num');
       const gl = p.value - p.invested;
-      cell(tr, (gl > 0 ? '+' : gl < 0 ? '−' : '') + money.format(Math.abs(gl)), `num ${gl > 0 ? 'gain' : gl < 0 ? 'loss' : ''}`);
+      cell(tr, signedMoney(gl), `num ${gl > 0 ? 'gain' : gl < 0 ? 'loss' : ''}`);
+      if (comparing) cell(tr, money.format(p.benchmark), 'num');
       body.appendChild(tr);
     }
 
@@ -1335,6 +1405,12 @@ VOO,2,"$412.50",3/8/2025</div>
       notes.push(`Your brokerage's history doesn't say when some ${undated.join(', ')} shares were bought, `
         + 'so those shares are counted from the start of the chart.');
     }
+    if (history.compareMissing && enough) {
+      notes.push(`Couldn't load the ${history.compare.name} right now, so there's nothing to compare with. Try again in a moment.`);
+    } else if (comparing) {
+      notes.push(`The dashed line puts each purchase into ${history.compare.ticker}, a fund that tracks the ${fundName}, `
+        + 'on the same day and for the same amount. Neither line counts dividends.');
+    }
     $('history-note').textContent = notes.join(' ');
     $('history-note').hidden = notes.length === 0;
   }
@@ -1342,7 +1418,8 @@ VOO,2,"$412.50",3/8/2025</div>
   async function loadHistory() {
     const request = ++historyRequest;
     try {
-      const { status, data } = await api('GET', `/api/history?range=${encodeURIComponent(historyRange)}`);
+      const compare = historyCompare ? `&compare=${encodeURIComponent(historyCompare)}` : '';
+      const { status, data } = await api('GET', `/api/history?range=${encodeURIComponent(historyRange)}${compare}`);
       if (request !== historyRequest || status !== 200) return;
       renderHistory(data);
     } catch {
@@ -1364,6 +1441,16 @@ VOO,2,"$412.50",3/8/2025</div>
     try { localStorage.setItem(HISTORY_RANGE_KEY, historyRange); } catch { /* storage blocked */ }
     markRange();
     $('history-chart').classList.add('loading'); // keep the old frame while loading
+    loadHistory();
+  });
+
+  $('history-compare').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-compare]');
+    if (!btn || btn.dataset.compare === historyCompare) return;
+    historyCompare = btn.dataset.compare;
+    try { localStorage.setItem(HISTORY_COMPARE_KEY, historyCompare); } catch { /* storage blocked */ }
+    markRange();
+    $('history-chart').classList.add('loading');
     loadHistory();
   });
 

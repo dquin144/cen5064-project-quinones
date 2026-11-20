@@ -209,8 +209,10 @@ test("builds the chart from the user's own holdings only", async () => {
     points: [{ date: '2026-01-05', value: 220, invested: 200 }, { date: '2026-01-06', value: 240, invested: 200 }],
     missing: [],
     undated: [],
+    compare: null,
+    compareMissing: false,
   });
-  assert.deepStrictEqual(await service.getValueHistory('3'), { range: '1y', points: [], missing: [], undated: [] });
+  assert.deepStrictEqual(await service.getValueHistory('3'), { range: '1y', points: [], missing: [], undated: [], compare: null, compareMissing: false });
 });
 
 test('synced positions are dated from the stored brokerage buys, and priced without any earlier call', async () => {
@@ -230,4 +232,76 @@ test('synced positions are dated from the stored brokerage buys, and priced with
     { date: '2026-01-07', value: 440, invested: 400 },
   ]);
   assert.deepStrictEqual(undated, []);
+});
+
+// ---- Comparing with an index fund ----
+
+const fund = (pairs, livePrice = null) => ({ closes: closes(pairs), livePrice });
+
+test('the index line starts with the portfolio and then follows the fund', () => {
+  // Bought before the chart starts: the same money "goes into" the fund on day 1.
+  const rows = consolidateHoldings([manual('AAPL', 10, 50, '2025-01-02')]);
+  const history = new Map([['AAPL', closes([['2026-01-05', 100], ['2026-01-06', 110], ['2026-01-07', 120]])]]);
+  const benchmark = fund([['2026-01-05', 500], ['2026-01-06', 550], ['2026-01-07', 500]]);
+  assert.deepStrictEqual(buildValueHistory(rows, history, { benchmark }).points, [
+    { date: '2026-01-05', value: 1000, invested: 500, benchmark: 1000 },
+    { date: '2026-01-06', value: 1100, invested: 500, benchmark: 1100 },
+    { date: '2026-01-07', value: 1200, invested: 500, benchmark: 1000 },
+  ]);
+});
+
+test('money added during the period goes into the fund on the same day, for the same amount', () => {
+  const rows = consolidateHoldings([manual('AAPL', 10, 50, '2025-01-02'), manual('AAPL', 5, 110, '2026-01-06')]);
+  const history = new Map([['AAPL', closes([['2026-01-05', 100], ['2026-01-06', 110], ['2026-01-07', 120]])]]);
+  const benchmark = fund([['2026-01-05', 500], ['2026-01-06', 550], ['2026-01-07', 500]]);
+  const { points } = buildValueHistory(rows, history, { benchmark });
+  // Day 2: the new 5 shares ($550) buy 1 fund share; day 3: 3 fund shares at $500.
+  assert.deepStrictEqual(points.map((p) => [p.value, p.benchmark]), [[1000, 1000], [1650, 1650], [1800, 1500]]);
+});
+
+test('the index line ends on the fund\'s live price, and carries its close over days it did not trade', () => {
+  const rows = consolidateHoldings([manual('AAPL', 1, 100, '2025-01-02')]);
+  const history = new Map([['AAPL', closes([['2026-01-05', 100], ['2026-01-06', 100], ['2026-01-07', 100]])]]);
+  const benchmark = fund([['2026-01-05', 50], ['2026-01-07', 60]], 75); // no close on the 6th
+  assert.deepStrictEqual(buildValueHistory(rows, history, { benchmark }).points.map((p) => p.benchmark), [100, 100, 150]);
+});
+
+test('without a fund history there is no index line', () => {
+  const rows = consolidateHoldings([manual('AAPL', 1, 100, '2025-01-02')]);
+  const history = new Map([['AAPL', closes([['2026-01-05', 100], ['2026-01-06', 100]])]]);
+  for (const benchmark of [null, fund([])]) {
+    assert.ok(buildValueHistory(rows, history, { benchmark }).points.every((p) => !('benchmark' in p)));
+  }
+});
+
+test('service: compares with the chosen index fund, priced live at the end', async () => {
+  const fetch = fakeFetch((url) => {
+    if (url.includes('range=')) {
+      return url.includes('/SPY') ? yahooHistory([['2026-01-05', 500], ['2026-01-06', 525]]) : yahooHistory([['2026-01-05', 100], ['2026-01-06', 100]]);
+    }
+    return url.includes('/SPY') ? { chart: { result: [{ meta: { regularMarketPrice: 550, regularMarketTime: at('2026-01-06') } }] } } : new Error('no live AAPL');
+  });
+  prices.setFetchForTests(fetch);
+  service.addHolding('1', { ticker: 'AAPL', shares: '10', purchasePrice: '100', purchaseDate: '2025-12-01' });
+
+  const result = await service.getValueHistory('1', { range: '1mo', compare: 'sp500' });
+  assert.deepStrictEqual(result.compare, { id: 'sp500', name: 'S&P 500', ticker: 'SPY' });
+  assert.strictEqual(result.compareMissing, false);
+  assert.deepStrictEqual(result.points.map((p) => p.benchmark), [1000, 1100]); // 2 fund shares, live $550
+  assert.ok(fetch.urls.some((u) => /\/SPY\?range=1mo/.test(u)));
+});
+
+test('service: an unknown comparison is ignored, and a fund that fails to load is reported', async () => {
+  prices.setFetchForTests(fakeFetch((url) => {
+    if (url.includes('range=') && url.includes('/AAPL')) return yahooHistory([['2026-01-05', 100], ['2026-01-06', 100]]);
+    return new Error('down');
+  }));
+  service.addHolding('1', { ticker: 'AAPL', shares: '1', purchasePrice: '100', purchaseDate: '2025-12-01' });
+
+  const unknown = await service.getValueHistory('1', { compare: 'constructor' });
+  assert.strictEqual(unknown.compare, null);
+  const failed = await service.getValueHistory('1', { compare: 'nasdaq100' });
+  assert.strictEqual(failed.compareMissing, true);
+  assert.strictEqual(failed.points.length, 2, 'the portfolio itself still charts');
+  assert.ok(failed.points.every((p) => !('benchmark' in p)));
 });
