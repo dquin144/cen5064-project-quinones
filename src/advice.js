@@ -107,20 +107,33 @@ const unverified = (texts, known) => texts.flatMap(numbersIn).filter((n) => !isK
 const clean = (text, max) => String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
 // raw: { summary, recommendations: [{ title, why, steps, ticker, priority, basedOn }] }
-// as the model wrote it. Returns { summary, recommendations, dropped }, or null when
-// nothing usable is left:
+// as the model wrote it. Returns { summary, recommendations, dropped, unverified },
+// or null when nothing usable is left:
 //   summary: the summary, or null if it used a number the brief doesn't have
 //   recommendations: at most 6, highest priority first; tickers the user doesn't
 //     hold and finding ids that don't exist are removed
 //   dropped: how many recommendations were removed for unverifiable numbers
+//   unverified: the numbers that caused it, for the server log
+//
+// A number Claude worked out correctly from the brief (say, the percentage left
+// after a sale) fails too: the check can't tell a right calculation from a made-up
+// one. That's deliberate. The rules already compute the amounts a move needs, the
+// prompt tells Claude not to calculate, and the page says how many were removed.
 function validateAdvice(raw, { brief, heldTickers = [], insightIds = [] }) {
   if (!raw || typeof raw !== 'object') return null;
   const known = knownNumbers(brief);
   const held = new Set(heldTickers.map((t) => t.toUpperCase()));
   const ids = new Set(insightIds);
 
+  const failed = new Set();
+  const check = (texts) => {
+    const bad = unverified(texts, known);
+    bad.forEach((n) => failed.add(n));
+    return bad.length === 0;
+  };
+
   let summary = clean(raw.summary, MAX_SUMMARY_CHARS) || null;
-  if (summary && unverified([summary], known).length > 0) summary = null;
+  if (summary && !check([summary])) summary = null;
 
   let dropped = 0;
   const recommendations = [];
@@ -132,7 +145,7 @@ function validateAdvice(raw, { brief, heldTickers = [], insightIds = [] }) {
       .map((s) => clean(s, MAX_TEXT_CHARS))
       .filter(Boolean)
       .slice(0, MAX_STEPS);
-    if (unverified([title, why, ...steps], known).length > 0) {
+    if (!check([title, why, ...steps])) {
       dropped += 1;
       continue;
     }
@@ -150,7 +163,7 @@ function validateAdvice(raw, { brief, heldTickers = [], insightIds = [] }) {
   recommendations.splice(MAX_RECOMMENDATIONS);
 
   if (!summary && recommendations.length === 0) return null;
-  return { summary, recommendations, dropped };
+  return { summary, recommendations, dropped, unverified: [...failed] };
 }
 
 const money = (n) => `$${Math.round(n).toLocaleString('en-US')}`;

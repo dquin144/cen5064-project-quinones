@@ -5,8 +5,8 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
 const SCHEMA = `
-  -- user_id is the owning account's id as text ('local' for holdings saved
-  -- before accounts existed), the same value brokerage tables call app_user_id.
+  -- user_id is the owning account's id as text, the same value brokerage tables
+  -- call app_user_id. No default: every insert has to say whose holding it is.
   CREATE TABLE IF NOT EXISTS holdings (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker         TEXT NOT NULL,
@@ -14,7 +14,7 @@ const SCHEMA = `
     purchase_price REAL NOT NULL,
     purchase_date  TEXT NOT NULL,
     created_at     TEXT NOT NULL DEFAULT (datetime('now')),
-    user_id        TEXT NOT NULL DEFAULT 'local'
+    user_id        TEXT NOT NULL
   );
 
   -- Accounts. password_hash is a salted scrypt hash (see auth.js), never the password.
@@ -75,7 +75,8 @@ const SCHEMA = `
     PRIMARY KEY (app_user_id, account_id, ticker)
   );
 
-  -- Past buy transactions, used only for the purchase history display.
+  -- Past buy transactions: the purchase history display, and the dates of synced
+  -- shares on the value-over-time chart.
   CREATE TABLE IF NOT EXISTS brokerage_buys (
     account_id TEXT NOT NULL REFERENCES brokerage_accounts(id) ON DELETE CASCADE,
     ticker     TEXT NOT NULL,
@@ -85,11 +86,16 @@ const SCHEMA = `
   );
 `;
 
+// The owner of everything saved before accounts existed. Holdings from then get it
+// when the migration below adds their user_id column; brokerage data used it as
+// its app_user_id. Who takes that data over is decided by auth.register.
+const LEGACY_USER_ID = 'local';
+
 // Columns added after a table was first created. CREATE TABLE IF NOT EXISTS
 // won't add them to an existing database, so add any that are missing.
 const ADDED_COLUMNS = [
   { table: 'brokerage_positions', column: 'price', type: 'REAL' },
-  { table: 'holdings', column: 'user_id', type: "TEXT NOT NULL DEFAULT 'local'" },
+  { table: 'holdings', column: 'user_id', type: `TEXT NOT NULL DEFAULT '${LEGACY_USER_ID}'` },
 ];
 
 function migrate(db) {
@@ -123,12 +129,35 @@ function closeDb() {
   db = null;
 }
 
-// Holdings belong to one user; userId defaults to 'local' (see service.js).
+// Runs fn() as one transaction: everything it writes is saved, or nothing is.
+// Returns what fn returns.
+function transaction(fn) {
+  const db = getDb();
+  db.exec('BEGIN');
+  try {
+    const result = fn();
+    db.exec('COMMIT');
+    return result;
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
 
-function loadHoldings(userId = 'local') {
+// Every function that reads or writes one user's data takes that user's id first,
+// with no default. A missing or malformed id throws here, so code that forgets
+// whose data it means fails loudly instead of using someone else's.
+function owner(userId) {
+  if (typeof userId !== 'string' || userId === '') {
+    throw new TypeError(`A user id (non-empty string) is required, got ${typeof userId}.`);
+  }
+  return userId;
+}
+
+function loadHoldings(userId) {
   return getDb()
     .prepare('SELECT id, ticker, shares, purchase_price, purchase_date FROM holdings WHERE user_id = ? ORDER BY id')
-    .all(userId)
+    .all(owner(userId))
     .map((r) => ({
       id: r.id,
       ticker: r.ticker,
@@ -138,24 +167,24 @@ function loadHoldings(userId = 'local') {
     }));
 }
 
-function saveHolding(h, userId = 'local') {
+function saveHolding(userId, h) {
   const { lastInsertRowid } = getDb()
     .prepare('INSERT INTO holdings (ticker, shares, purchase_price, purchase_date, user_id) VALUES (?, ?, ?, ?, ?)')
-    .run(h.ticker, h.shares, h.purchasePrice, h.purchaseDate, userId);
+    .run(h.ticker, h.shares, h.purchasePrice, h.purchaseDate, owner(userId));
   return { id: Number(lastInsertRowid), ...h };
 }
 
 // Returns true if this user had a holding with that id and it was changed.
-function updateHolding(id, h, userId = 'local') {
+function updateHolding(userId, id, h) {
   const { changes } = getDb()
     .prepare('UPDATE holdings SET ticker = ?, shares = ?, purchase_price = ?, purchase_date = ? WHERE id = ? AND user_id = ?')
-    .run(h.ticker, h.shares, h.purchasePrice, h.purchaseDate, id, userId);
+    .run(h.ticker, h.shares, h.purchasePrice, h.purchaseDate, id, owner(userId));
   return changes > 0;
 }
 
 // Returns true if this user had a holding with that id and it was removed.
-function deleteHolding(id, userId = 'local') {
-  return getDb().prepare('DELETE FROM holdings WHERE id = ? AND user_id = ?').run(id, userId).changes > 0;
+function deleteHolding(userId, id) {
+  return getDb().prepare('DELETE FROM holdings WHERE id = ? AND user_id = ?').run(id, owner(userId)).changes > 0;
 }
 
 // ---- Brokerage (SnapTrade) ----
@@ -163,19 +192,20 @@ function deleteHolding(id, userId = 'local') {
 function getBrokerageUser(appUserId) {
   const row = getDb()
     .prepare('SELECT snaptrade_user_id, user_secret FROM brokerage_users WHERE app_user_id = ?')
-    .get(appUserId);
+    .get(owner(appUserId));
   return row ? { userId: row.snaptrade_user_id, userSecret: row.user_secret } : null;
 }
 
 function saveBrokerageUser(appUserId, user) {
   getDb()
     .prepare('INSERT INTO brokerage_users (app_user_id, snaptrade_user_id, user_secret) VALUES (?, ?, ?)')
-    .run(appUserId, user.userId, user.userSecret);
+    .run(owner(appUserId), user.userId, user.userSecret);
 }
 
 // Each sync is a full snapshot: drop the user's old accounts (positions and buys
 // cascade), insert the new ones.
 function replaceBrokerageData(appUserId, accounts, positions, buys = []) {
+  owner(appUserId);
   const db = getDb();
   const insertAccount = db.prepare(
     'INSERT INTO brokerage_accounts (id, app_user_id, name, institution) VALUES (?, ?, ?, ?)');
@@ -203,7 +233,7 @@ function loadBrokeragePositions(appUserId) {
                      a.name AS account_name
               FROM brokerage_positions p JOIN brokerage_accounts a ON a.id = p.account_id
               WHERE a.app_user_id = ? ORDER BY p.rowid`)
-    .all(appUserId)
+    .all(owner(appUserId))
     .map(toPosition);
 }
 
@@ -214,7 +244,7 @@ function getBrokeragePosition(appUserId, id) {
                      a.name AS account_name
               FROM brokerage_positions p JOIN brokerage_accounts a ON a.id = p.account_id
               WHERE p.rowid = ? AND a.app_user_id = ?`)
-    .get(id, appUserId);
+    .get(id, owner(appUserId));
   return row ? toPosition(row) : null;
 }
 
@@ -236,7 +266,7 @@ function loadOverrides(appUserId) {
   return getDb()
     .prepare(`SELECT account_id, ticker, action, shares, average_price
               FROM brokerage_overrides WHERE app_user_id = ? ORDER BY created_at, ticker`)
-    .all(appUserId)
+    .all(owner(appUserId))
     .map((r) => ({
       accountId: r.account_id,
       ticker: r.ticker,
@@ -254,11 +284,12 @@ function saveOverride(appUserId, o) {
               ON CONFLICT (app_user_id, account_id, ticker) DO UPDATE SET
                 action = excluded.action, shares = excluded.shares,
                 average_price = excluded.average_price, created_at = datetime('now')`)
-    .run(appUserId, o.accountId, o.ticker, o.action, o.shares ?? null, o.averagePrice ?? null);
+    .run(owner(appUserId), o.accountId, o.ticker, o.action, o.shares ?? null, o.averagePrice ?? null);
 }
 
 // Deletes the overrides for the given { accountId, ticker } keys, or all of them.
 function deleteOverrides(appUserId, keys = null) {
+  owner(appUserId);
   const db = getDb();
   if (keys === null) {
     db.prepare('DELETE FROM brokerage_overrides WHERE app_user_id = ?').run(appUserId);
@@ -270,48 +301,51 @@ function deleteOverrides(appUserId, keys = null) {
 
 function loadBrokerageBuys(appUserId) {
   return getDb()
-    .prepare(`SELECT b.ticker, b.shares, b.price, b.trade_date, a.name AS account_name
+    .prepare(`SELECT b.account_id, b.ticker, b.shares, b.price, b.trade_date, a.name AS account_name
               FROM brokerage_buys b JOIN brokerage_accounts a ON a.id = b.account_id
               WHERE a.app_user_id = ? ORDER BY b.rowid`)
-    .all(appUserId)
-    .map((r) => ({ ticker: r.ticker, shares: r.shares, price: r.price, date: r.trade_date, accountName: r.account_name }));
+    .all(owner(appUserId))
+    .map((r) => ({
+      accountId: r.account_id,
+      ticker: r.ticker,
+      shares: r.shares,
+      price: r.price,
+      date: r.trade_date,
+      accountName: r.account_name,
+    }));
 }
 
 function countBrokerageAccounts(appUserId) {
   return getDb()
     .prepare('SELECT COUNT(*) AS n FROM brokerage_accounts WHERE app_user_id = ?')
-    .get(appUserId).n;
+    .get(owner(appUserId)).n;
 }
 
 // ---- Accounts and sessions ----
 
 const toUser = (r) => (r ? { id: r.id, username: r.username, passwordHash: r.password_hash } : null);
 
-// Creates an account and returns it, or null if the username is taken (any case).
-// The first account ever created also takes over the data saved before accounts
-// existed (owned by 'local'), so upgrading Folio doesn't lose anyone's portfolio.
+// Creates an account and returns { id, username }, or null if the username is
+// taken (any case).
 function createUser(username, passwordHash) {
-  const db = getDb();
-  db.exec('BEGIN');
-  try {
-    const first = db.prepare('SELECT COUNT(*) AS n FROM users').get().n === 0;
-    const { changes, lastInsertRowid } = db
-      .prepare('INSERT INTO users (username, password_hash) VALUES (?, ?) ON CONFLICT (username) DO NOTHING')
-      .run(username, passwordHash);
-    const id = Number(lastInsertRowid);
-    if (changes > 0 && first) claimLocalData(db, String(id));
-    db.exec('COMMIT');
-    return changes > 0 ? { id, username } : null;
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
+  const { changes, lastInsertRowid } = getDb()
+    .prepare('INSERT INTO users (username, password_hash) VALUES (?, ?) ON CONFLICT (username) DO NOTHING')
+    .run(username, passwordHash);
+  return changes > 0 ? { id: Number(lastInsertRowid), username } : null;
 }
 
-function claimLocalData(db, userId) {
-  db.prepare("UPDATE holdings SET user_id = ? WHERE user_id = 'local'").run(userId);
+function countUsers() {
+  return getDb().prepare('SELECT COUNT(*) AS n FROM users').get().n;
+}
+
+// Gives everything one user owns (holdings and brokerage data) to another user.
+// Storage only: the caller decides when that should happen.
+function transferUserData(fromUserId, toUserId) {
+  const db = getDb();
+  const [from, to] = [owner(fromUserId), owner(toUserId)];
+  db.prepare('UPDATE holdings SET user_id = ? WHERE user_id = ?').run(to, from);
   for (const table of ['brokerage_users', 'brokerage_accounts', 'brokerage_overrides']) {
-    db.prepare(`UPDATE ${table} SET app_user_id = ? WHERE app_user_id = 'local'`).run(userId);
+    db.prepare(`UPDATE ${table} SET app_user_id = ? WHERE app_user_id = ?`).run(to, from);
   }
 }
 
@@ -344,7 +378,9 @@ function deleteExpiredSessions(now) {
 }
 
 module.exports = {
+  LEGACY_USER_ID,
   configure,
+  transaction,
   loadHoldings,
   saveHolding,
   updateHolding,
@@ -360,6 +396,8 @@ module.exports = {
   loadBrokerageBuys,
   countBrokerageAccounts,
   createUser,
+  countUsers,
+  transferUserData,
   findUserByUsername,
   createSession,
   findSessionUser,

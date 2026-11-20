@@ -104,12 +104,6 @@ function createServer(config = getConfig()) {
     `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${auth.SESSION_DAYS * 24 * 60 * 60}${secure}`;
   const clearedCookie = `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`;
 
-  // The portfolio with live prices (cached briefly, so this is cheap to call often).
-  async function pricedPortfolio(userId, fresh = false) {
-    await service.refreshPrices({ fresh, userId });
-    return service.getPortfolio(userId);
-  }
-
   async function handle(req, res) {
     const { pathname, searchParams } = new URL(req.url, 'http://localhost');
     const route = `${req.method} ${pathname}`;
@@ -147,59 +141,56 @@ function createServer(config = getConfig()) {
     if (!user) return sendJson(res, 401, { error: 'Please log in.' });
     const userId = req.userId;
 
+    // Each Service call fetches the prices it needs (cached for a minute).
+    const fresh = searchParams.get('refresh') === '1';
     if (route === 'GET /api/portfolio') {
-      return sendJson(res, 200, await pricedPortfolio(userId, searchParams.get('refresh') === '1'));
+      return sendJson(res, 200, await service.getPortfolio(userId, { fresh }));
     }
     if (route === 'GET /api/history') {
-      await service.refreshPrices({ userId }); // cached briefly, so this is cheap
-      return sendJson(res, 200, await service.getValueHistory({ range: searchParams.get('range') ?? '1y', userId }));
+      return sendJson(res, 200, await service.getValueHistory(userId, { range: searchParams.get('range') ?? '1y' }));
     }
     if (route === 'GET /api/recommendations') {
-      await service.refreshPrices({ userId }); // cached briefly, so this is cheap
-      return sendJson(res, 200, await service.getRecommendations({ fresh: searchParams.get('refresh') === '1', userId }));
+      return sendJson(res, 200, await service.getRecommendations(userId, { fresh }));
     }
     if (route === 'GET /api/advice') {
-      await service.refreshPrices({ userId });
-      return sendJson(res, 200, await service.getAdvice({ fresh: searchParams.get('refresh') === '1', userId }));
+      return sendJson(res, 200, await service.getAdvice(userId, { fresh }));
     }
     if (route === 'POST /api/holdings') {
-      const { errors } = service.addHolding(await readJson(req), userId);
+      const { errors } = service.addHolding(userId, await readJson(req));
       if (Object.keys(errors).length > 0) return sendJson(res, 400, { errors });
-      return sendJson(res, 201, await pricedPortfolio(userId));
+      return sendJson(res, 201, await service.getPortfolio(userId));
     }
     const holdingId = matchId(pathname, '/api/holdings/');
     if (holdingId && req.method === 'PUT') {
-      const { errors } = service.updateHolding(holdingId, await readJson(req), userId);
+      const { errors } = service.updateHolding(userId, holdingId, await readJson(req));
       if (Object.keys(errors).length > 0) return sendJson(res, 400, { errors });
-      return sendJson(res, 200, await pricedPortfolio(userId));
+      return sendJson(res, 200, await service.getPortfolio(userId));
     }
     if (holdingId && req.method === 'DELETE') {
-      service.removeHolding(holdingId, userId);
-      return sendJson(res, 200, service.getPortfolio(userId));
+      service.removeHolding(userId, holdingId);
+      return sendJson(res, 200, await service.getPortfolio(userId));
     }
     const positionId = matchId(pathname, '/api/brokerage/positions/');
     if (positionId && req.method === 'PUT') {
-      const { errors } = service.editBrokeragePosition(positionId, await readJson(req), userId);
+      const { errors } = service.editBrokeragePosition(userId, positionId, await readJson(req));
       if (Object.keys(errors).length > 0) return sendJson(res, 400, { errors });
-      return sendJson(res, 200, service.getPortfolio(userId));
+      return sendJson(res, 200, await service.getPortfolio(userId));
     }
     if (positionId && req.method === 'DELETE') {
-      service.removeBrokeragePosition(positionId, userId);
-      return sendJson(res, 200, service.getPortfolio(userId));
+      service.removeBrokeragePosition(userId, positionId);
+      return sendJson(res, 200, await service.getPortfolio(userId));
     }
     if (route === 'POST /api/brokerage/connect') {
-      const url = await service.startBrokerageConnection(`${config.appUrl}/portfolio.html?brokerage=connected`, userId);
+      const url = await service.startBrokerageConnection(userId, `${config.appUrl}/portfolio.html?brokerage=connected`);
       return sendJson(res, 200, { url });
     }
     if (route === 'POST /api/brokerage/sync') {
-      const synced = await service.syncBrokerage(userId);
-      await service.refreshPrices({ userId }); // newly synced tickers need prices too
-      return sendJson(res, 200, { ...synced, ...service.getPortfolio(userId) });
+      return sendJson(res, 200, await service.syncBrokerage(userId));
     }
     if (route === 'POST /api/brokerage/conflicts') {
       const { keepMine } = await readJson(req);
       if (typeof keepMine !== 'boolean') throw new BadRequest('keepMine must be true or false.');
-      return sendJson(res, 200, service.resolveSyncConflicts(keepMine, userId));
+      return sendJson(res, 200, await service.resolveSyncConflicts(userId, keepMine));
     }
     if (route === 'POST /api/brokerage/disconnect') {
       return sendJson(res, 200, await service.disconnectBrokerage(userId));
@@ -207,25 +198,34 @@ function createServer(config = getConfig()) {
     sendJson(res, 404, { error: 'Not found' });
   }
 
+  // Maps an error from handle() to its HTTP response.
+  async function sendError(req, res, err) {
+    if (err instanceof BadRequest) return sendJson(res, err.status, { error: err.message });
+    if (err instanceof auth.AuthError) return sendJson(res, err.status, { error: err.message, errors: err.errors });
+    if (err instanceof service.NotConfiguredError) return sendJson(res, 503, { error: err.message });
+    if (err instanceof service.NotConnectedError) return sendJson(res, 409, { error: err.message });
+    // Send the current portfolio along so the page can refresh its stale list.
+    if (err instanceof service.NotFoundError) {
+      return sendJson(res, 404, { error: err.message, portfolio: await service.getPortfolio(req.userId) });
+    }
+    // SnapTrade failing doesn't stop the rest of Folio: send the portfolio so the
+    // page keeps showing manual holdings and the last synced data.
+    if (err instanceof service.BrokerageApiError) {
+      console.error(`SnapTrade (${err.reason}): ${err.message}`);
+      return sendJson(res, 502, { error: err.message, reason: err.reason, portfolio: await service.getPortfolio(req.userId) });
+    }
+    console.error(err);
+    sendJson(res, 500, { error: 'Something went wrong on the server.' });
+  }
+
   return http.createServer((req, res) => {
-    handle(req, res).catch((err) => {
-      if (err instanceof BadRequest) return sendJson(res, err.status, { error: err.message });
-      if (err instanceof auth.AuthError) return sendJson(res, err.status, { error: err.message, errors: err.errors });
-      if (err instanceof service.NotConfiguredError) return sendJson(res, 503, { error: err.message });
-      if (err instanceof service.NotConnectedError) return sendJson(res, 409, { error: err.message });
-      // Send the current portfolio along so the page can refresh its stale list.
-      if (err instanceof service.NotFoundError) {
-        return sendJson(res, 404, { error: err.message, portfolio: service.getPortfolio(req.userId) });
-      }
-      // SnapTrade failing doesn't stop the rest of Folio: send the portfolio so the
-      // page keeps showing manual holdings and the last synced data.
-      if (err instanceof service.BrokerageApiError) {
-        console.error(`SnapTrade (${err.reason}): ${err.message}`);
-        return sendJson(res, 502, { error: err.message, reason: err.reason, portfolio: service.getPortfolio(req.userId) });
-      }
-      console.error(err);
-      sendJson(res, 500, { error: 'Something went wrong on the server.' });
-    });
+    handle(req, res)
+      .catch((err) => sendError(req, res, err))
+      .catch((err) => {
+        // Building the error response failed too (e.g. the database is gone).
+        console.error(err);
+        if (!res.headersSent) sendJson(res, 500, { error: 'Something went wrong on the server.' });
+      });
   });
 }
 
