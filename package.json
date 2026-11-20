@@ -1,7 +1,7 @@
 {
-  "name": "ai-portfolio-analyzer",
-  "version": "0.1.0",
-  "description": "AI Portfolio Analyzer",
+  "name": "folio",
+  "version": "1.0.0",
+  "description": "Folio: a portfolio analyzer for individual investors, with news and AI-written recommendations",
   "main": "server.js",
   "scripts": {
     "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning server.js",
