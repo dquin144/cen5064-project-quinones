@@ -693,6 +693,30 @@
     gap: 14px;
   }
   .link-btn.danger { color: var(--error); }
+  a.link-btn { display: inline-block; }
+
+  /* CSV import */
+  .csv-format {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 10px 12px;
+    margin: 0 0 16px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  input[type="file"] { padding: 7px 8px; }
+  .import-errors {
+    margin: 10px 0 0;
+    padding-left: 1.2em;
+    color: var(--error);
+    font-size: 0.85rem;
+    line-height: 1.45;
+    max-height: 11em;
+    overflow-y: auto;
+  }
 
   /* Dialogs */
   dialog {
@@ -819,6 +843,8 @@
             <button type="button" class="link-btn" id="refresh-prices-btn">Refresh prices</button>
             <button type="button" class="link-btn" id="sync-btn" hidden>Sync accounts</button>
             <button type="button" class="link-btn" id="disconnect-btn" hidden>Disconnect</button>
+            <button type="button" class="link-btn" data-open="import-dialog">Import CSV</button>
+            <a class="link-btn" href="/api/holdings/export" download>Export CSV</a>
             <button type="button" class="btn btn-ghost" data-open="connect-dialog">Connect brokerage</button>
             <button type="button" class="btn btn-solid" data-open="add-dialog">Add holding</button>
           </div>
@@ -826,9 +852,10 @@
 
         <div class="empty" id="empty-state">
           <h3>Your portfolio is empty</h3>
-          <p>Add a stock you own by hand, or connect a brokerage account to bring in your holdings automatically.</p>
+          <p>Add a stock you own by hand, import a spreadsheet of your purchases, or connect a brokerage account to bring in your holdings automatically.</p>
           <div class="actions">
             <button type="button" class="btn btn-solid" data-open="add-dialog">Add holding</button>
+            <button type="button" class="btn btn-ghost" data-open="import-dialog">Import CSV</button>
             <button type="button" class="btn btn-ghost" data-open="connect-dialog">Connect brokerage</button>
           </div>
         </div>
@@ -987,6 +1014,25 @@
       <div class="dialog-actions">
         <button type="button" class="btn btn-ghost" data-close>Cancel</button>
         <button type="submit" class="btn btn-solid" id="holding-submit">Add holding</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="import-dialog" aria-labelledby="import-title">
+    <h2 id="import-title">Import holdings from a CSV file</h2>
+    <form id="import-form" novalidate>
+      <p>One purchase per row, with these column names in the first row. Excel, Google Sheets and Numbers can all save a sheet as CSV.</p>
+      <div class="csv-format">Ticker,Shares,Purchase price,Purchase date
+AAPL,10,150.00,2024-01-15
+VOO,2,"$412.50",3/8/2025</div>
+      <p>Folio checks every row the same way as <strong>Add holding</strong>. If any row has a problem, nothing is imported and each problem is listed. Purchases already in your portfolio aren't added twice. <a href="holdings-template.csv" download>Download a template</a></p>
+      <label for="import-file">CSV file</label>
+      <input id="import-file" name="file" type="file" accept=".csv,text/csv" />
+      <p class="error" id="import-error" role="alert"></p>
+      <ul class="import-errors" id="import-errors" hidden></ul>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn btn-solid" id="import-submit">Import</button>
       </div>
     </form>
   </dialog>
@@ -1748,6 +1794,7 @@
       const dialog = $(btn.dataset.open);
       if (dialog.id === 'add-dialog') resetForm();
       if (dialog.id === 'connect-dialog') prepareConnect();
+      if (dialog.id === 'import-dialog') resetImport();
       dialog.showModal();
     });
   });
@@ -1826,6 +1873,82 @@
     setStatus('');
     render(data);
     if (editedTicker) openManage(editedTicker); // back to the list being edited
+  });
+
+  // ---- Import holdings from CSV ----
+
+  const IMPORT_MAX_BYTES = 250 * 1024; // the server allows a little more, for the JSON around it
+  const IMPORT_ERRORS_SHOWN = 12;
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+  function resetImport() {
+    $('import-form').reset();
+    $('import-error').textContent = '';
+    showImportErrors([]);
+    $('import-submit').disabled = false;
+  }
+
+  function showImportErrors(errors) {
+    const list = $('import-errors');
+    list.replaceChildren();
+    for (const e of errors.slice(0, IMPORT_ERRORS_SHOWN)) {
+      const li = document.createElement('li');
+      li.textContent = `Row ${e.row}: ${e.message}`;
+      list.appendChild(li);
+    }
+    if (errors.length > IMPORT_ERRORS_SHOWN) {
+      const li = document.createElement('li');
+      li.textContent = `…and ${plural(errors.length - IMPORT_ERRORS_SHOWN, 'more problem')}.`;
+      list.appendChild(li);
+    }
+    list.hidden = errors.length === 0;
+  }
+
+  $('import-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('import-error').textContent = '';
+    showImportErrors([]);
+    const file = $('import-file').files[0];
+    if (!file) {
+      $('import-error').textContent = 'Choose a CSV file first.';
+      return;
+    }
+    if (file.size > IMPORT_MAX_BYTES) {
+      $('import-error').textContent = 'That file is too big. Split it into files of up to 1,000 holdings.';
+      return;
+    }
+    $('import-submit').disabled = true;
+    try {
+      const { status, data } = await api('POST', '/api/holdings/import', { csv: await file.text() });
+      if (status === 400 && data.errors) {
+        // A problem with the file as a whole (no rows, missing columns) reads
+        // best on its own; row problems are listed under a short heading.
+        const fileProblem = data.errors.length === 1 && !data.errors[0].field;
+        $('import-error').textContent = fileProblem
+          ? data.errors[0].message
+          : `Nothing was imported. Fix ${data.errors.length === 1 ? 'this problem' : `these ${data.errors.length} problems`} and try again:`;
+        if (!fileProblem) showImportErrors(data.errors);
+        return;
+      }
+      if (status !== 200) {
+        $('import-error').textContent = data.error || "Couldn't import the file. Please try again.";
+        return;
+      }
+      $('import-dialog').close();
+      render(data.portfolio);
+      const notes = [`Imported ${plural(data.imported, 'purchase')}.`];
+      if (data.duplicates) {
+        notes.push(`${plural(data.duplicates, 'row')} already in your portfolio ${data.duplicates === 1 ? 'was' : 'were'} skipped.`);
+      }
+      if (data.skipped) {
+        notes.push(`${plural(data.skipped, 'synced holding')} ${data.skipped === 1 ? 'was' : 'were'} skipped, since your brokerage provides ${data.skipped === 1 ? 'it' : 'them'}.`);
+      }
+      setStatus(notes.join(' '));
+    } catch {
+      $('import-error').textContent = "Couldn't import. Is the server running?";
+    } finally {
+      $('import-submit').disabled = false;
+    }
   });
 
   // ---- In-app confirmation (instead of the browser's confirm() pop-up) ----

@@ -15,6 +15,8 @@ const auth = require('./src/auth');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MAX_BODY_BYTES = 10 * 1024;
+// A CSV import can be bigger: room for the 1,000 holdings a file may have.
+const MAX_IMPORT_BYTES = 256 * 1024;
 const SESSION_COOKIE = 'folio_session';
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -23,6 +25,7 @@ const CONTENT_TYPES = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
+  '.csv': 'text/csv; charset=utf-8',
 };
 // Pages that need a login; a logged-out visit is sent to the login page.
 const PRIVATE_PAGES = new Set(['/portfolio.html']);
@@ -44,14 +47,14 @@ function redirect(res, location) {
   res.end();
 }
 
-function readJson(req) {
+function readJson(req, maxBytes = MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     let body = '';
     let tooLarge = false;
     req.on('data', (chunk) => {
       if (tooLarge) return; // keep draining so the client still gets our reply
       body += chunk;
-      if (body.length > MAX_BODY_BYTES) tooLarge = true;
+      if (body.length > maxBytes) tooLarge = true;
     });
     req.on('end', () => {
       if (tooLarge) return reject(new BadRequest('Request body too large.', 413));
@@ -159,6 +162,22 @@ function createServer(config = getConfig()) {
       const { errors } = service.addHolding(userId, await readJson(req));
       if (Object.keys(errors).length > 0) return sendJson(res, 400, { errors });
       return sendJson(res, 201, await service.getPortfolio(userId));
+    }
+    if (route === 'POST /api/holdings/import') {
+      const { csv } = await readJson(req, MAX_IMPORT_BYTES);
+      if (typeof csv !== 'string') throw new BadRequest('Send the file as { csv: "..." }.');
+      const result = service.importHoldings(userId, csv);
+      if (result.errors.length > 0) return sendJson(res, 400, result);
+      return sendJson(res, 200, { ...result, portfolio: await service.getPortfolio(userId) });
+    }
+    if (route === 'GET /api/holdings/export') {
+      const day = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+      res.writeHead(200, {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="folio-holdings-${day}.csv"`,
+        'Cache-Control': 'no-store',
+      });
+      return res.end(service.exportHoldings(userId));
     }
     const holdingId = matchId(pathname, '/api/holdings/');
     if (holdingId && req.method === 'PUT') {
