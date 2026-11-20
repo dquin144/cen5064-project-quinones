@@ -14,6 +14,8 @@ const { buildAdvisorBrief, validateAdvice, fallbackAdvice } = require('../src/ad
 
 data.configure(loadConfig({ DB_FILE: ':memory:' }));
 
+const USER = '1'; // the account every test here acts as
+
 const NOW = Date.parse('2026-11-07T12:00:00Z');
 const lot = (ticker, shares, purchasePrice, currentPrice, purchaseDate = '2024-01-15') =>
   ({ ticker, shares, purchasePrice, purchaseDate, currentPrice });
@@ -87,6 +89,19 @@ test('drops a recommendation with a number Folio did not provide', () => {
   });
   assert.strictEqual(result.dropped, 2);
   assert.deepStrictEqual(result.recommendations.map((r) => r.title), ['Consider selling about 8 TSLA shares (~$2,866)']);
+});
+
+test('a number correctly worked out from the brief is still dropped, and reported', () => {
+  // 35% with 8 of 20 shares sold is 21%: right, but not in the brief. The check
+  // can't tell a correct calculation from a made-up number, so both are removed
+  // (see ADR-006); the rules give Claude the amounts a move needs instead.
+  const result = check({
+    summary: 'S',
+    recommendations: [rec({ why: 'Selling 8 of your 20 shares leaves TSLA at 21% of your portfolio.' }), rec({})],
+  });
+  assert.strictEqual(result.dropped, 1);
+  assert.deepStrictEqual(result.unverified, [21]);
+  assert.strictEqual(result.recommendations.length, 1);
 });
 
 test('a day of the month does not vouch for a share count', () => {
@@ -233,8 +248,8 @@ async function withHoldings() {
   prices.clearCacheForTests();
   news.clearCacheForTests();
   service.configure(loadConfig({ DB_FILE: ':memory:' }));
-  service.addHolding({ ticker: 'TSLA', shares: '10', purchasePrice: '300', purchaseDate: '2024-01-15' });
-  service.addHolding({ ticker: 'AAPL', shares: '10', purchasePrice: '100', purchaseDate: '2024-01-15' });
+  service.addHolding(USER, { ticker: 'TSLA', shares: '10', purchasePrice: '300', purchaseDate: '2024-01-15' });
+  service.addHolding(USER, { ticker: 'AAPL', shares: '10', purchasePrice: '100', purchaseDate: '2024-01-15' });
   const fetch = async (url) => ({
     ok: true,
     status: 200,
@@ -242,12 +257,11 @@ async function withHoldings() {
   });
   prices.setFetchForTests(fetch);
   news.setFetchForTests(fetch);
-  await service.refreshPrices();
 }
 
 test('without a key, the summary comes from the rules and there are no AI recommendations', async () => {
   await withHoldings();
-  const advice = await service.getAdvice();
+  const advice = await service.getAdvice(USER);
   assert.strictEqual(advice.source, 'rules');
   assert.strictEqual(advice.aiConfigured, false);
   assert.strictEqual(advice.aiIssue, null);
@@ -270,7 +284,7 @@ test("with Claude, its recommendations are checked against the brief it was give
     });
   });
   claude.setClientForTests(fake);
-  const advice = await service.getAdvice();
+  const advice = await service.getAdvice(USER);
   assert.strictEqual(advice.source, 'claude');
   assert.strictEqual(advice.model, 'claude-haiku-5-5');
   assert.strictEqual(advice.recommendations.length, 1);
@@ -284,7 +298,7 @@ test("when Claude's summary fails the check, the rules' summary is used with Cla
     summary: 'You will make $123,456.',
     recommendations: [{ title: 'Review your TSLA position', why: '', steps: [], ticker: 'TSLA', priority: 'high', basedOn: [] }],
   })));
-  const advice = await service.getAdvice();
+  const advice = await service.getAdvice(USER);
   assert.strictEqual(advice.source, 'claude');
   assert.match(advice.summary, /worth about/);
   assert.strictEqual(advice.recommendations.length, 1);
@@ -293,7 +307,7 @@ test("when Claude's summary fails the check, the rules' summary is used with Cla
 test('when Claude fails, the rules-based summary is shown with the reason', async () => {
   await withHoldings();
   claude.setClientForTests(fakeClaude(() => { throw new Anthropic.RateLimitError(429, {}, 'slow', new Headers()); }));
-  const advice = await service.getAdvice();
+  const advice = await service.getAdvice(USER);
   assert.strictEqual(advice.source, 'rules');
   assert.match(advice.aiIssue, /rate limited/);
   assert.match(advice.summary, /worth about/);

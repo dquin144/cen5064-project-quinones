@@ -9,6 +9,8 @@ const { consolidateHoldings, allocatePortfolio } = require('../src/domain.js');
 
 data.configure(loadConfig({ DB_FILE: ':memory:' }));
 
+const USER = '1'; // the account every test here acts as
+
 const lot = (ticker, shares, purchasePrice, currentPrice = null) =>
   ({ ticker, shares, purchasePrice, purchaseDate: '2024-01-15', currentPrice });
 
@@ -72,18 +74,16 @@ const fakeFetch = (priceFor) => async (url) =>
   ({ ok: true, status: 200, json: async () => yahoo(priceFor(url.includes('AAPL') ? 'AAPL' : 'MSFT')) });
 
 test('gain/loss and allocation update when prices are refreshed', async () => {
-  service.addHolding({ ticker: 'AAPL', shares: '10', purchasePrice: '100', purchaseDate: '2024-01-15' });
-  service.addHolding({ ticker: 'MSFT', shares: '10', purchasePrice: '100', purchaseDate: '2024-01-15' });
+  service.addHolding(USER, { ticker: 'AAPL', shares: '10', purchasePrice: '100', purchaseDate: '2024-01-15' });
+  service.addHolding(USER, { ticker: 'MSFT', shares: '10', purchasePrice: '100', purchaseDate: '2024-01-15' });
 
   prices.setFetchForTests(fakeFetch(() => 100));
-  await service.refreshPrices();
-  let portfolio = service.getPortfolio();
+  let portfolio = await service.getPortfolio(USER);
   assert.deepStrictEqual(portfolio.rows.map((r) => r.gainLoss), [0, 0]);
   assert.deepStrictEqual(portfolio.allocation.map((p) => [p.label, p.percent]), [['AAPL', 50], ['MSFT', 50]]);
 
   prices.setFetchForTests(fakeFetch((t) => (t === 'AAPL' ? 300 : 100)));
-  await service.refreshPrices({ fresh: true });
-  portfolio = service.getPortfolio();
+  portfolio = await service.getPortfolio(USER, { fresh: true });
   assert.deepStrictEqual(portfolio.rows.map((r) => [r.ticker, r.gainLoss, r.gainLossPercent]), [['AAPL', 2000, 200], ['MSFT', 0, 0]]);
   assert.deepStrictEqual(portfolio.allocation.map((p) => [p.label, p.percent]), [['AAPL', 75], ['MSFT', 25]]);
   assert.strictEqual(portfolio.summary.gainLossPercent, 100);

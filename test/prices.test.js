@@ -8,6 +8,8 @@ const service = require('../src/service.js');
 
 data.configure(loadConfig({ DB_FILE: ':memory:' }));
 
+const USER = '1'; // the account every test here acts as
+
 // Stands in for fetch. routes: (url) -> JSON body, or an Error to fail the request.
 // Records every URL requested.
 function fakeFetch(routes) {
@@ -84,15 +86,14 @@ test('keeps the last known price when a refresh fails', async () => {
 const valid = { ticker: 'AAPL', shares: '10', purchasePrice: '150', purchaseDate: '2024-01-15' };
 
 function syncedVti(brokeragePrice) {
-  data.replaceBrokerageData('local', [{ id: 'a1', name: 'Brokerage', institution: 'X' }],
+  data.replaceBrokerageData(USER, [{ id: 'a1', name: 'Brokerage', institution: 'X' }],
     [{ accountId: 'a1', ticker: 'VTI', shares: 2, averagePrice: 200, price: brokeragePrice }], []);
 }
 
 test('a manual holding gets a value from the live price', async () => {
   prices.setFetchForTests(fakeFetch(() => yahoo(200)));
-  service.addHolding(valid);
-  await service.refreshPrices();
-  const { rows, summary, pricesAsOf } = service.getPortfolio();
+  service.addHolding(USER, valid);
+  const { rows, summary, pricesAsOf } = await service.getPortfolio(USER);
   assert.strictEqual(rows[0].currentPrice, 200);
   assert.strictEqual(rows[0].value, 2000);
   assert.strictEqual(summary.gainLoss, 500);
@@ -103,18 +104,31 @@ test('a manual holding gets a value from the live price', async () => {
 test('a live price beats the brokerage price for a synced holding', async () => {
   prices.setFetchForTests(fakeFetch(() => yahoo(250)));
   syncedVti(220);
-  await service.refreshPrices();
-  assert.strictEqual(service.getPortfolio().rows[0].currentPrice, 250);
+  assert.strictEqual((await service.getPortfolio(USER)).rows[0].currentPrice, 250);
 });
 
 test('with no live price, a synced holding keeps the brokerage price and a manual one has none', async () => {
   prices.setFetchForTests(fakeFetch(() => new Error('offline')));
   syncedVti(220);
-  service.addHolding(valid);
-  await service.refreshPrices();
-  const { rows, summary, pricesAsOf } = service.getPortfolio();
+  service.addHolding(USER, valid);
+  const { rows, summary, pricesAsOf } = await service.getPortfolio(USER);
   assert.strictEqual(rows.find((r) => r.ticker === 'VTI').currentPrice, 220);
   assert.strictEqual(rows.find((r) => r.ticker === 'AAPL').currentPrice, null);
   assert.strictEqual(summary.unpricedCount, 1);
   assert.strictEqual(pricesAsOf, null);
+});
+
+test('every portfolio view gets its own prices; repeat views within a minute reuse them', async () => {
+  const fetch = fakeFetch(() => yahoo(200));
+  prices.setFetchForTests(fetch);
+  service.addHolding(USER, valid);
+  service.addHolding('2', { ...valid, ticker: 'MSFT' });
+
+  // No call has to come first: each of these fetches what it needs.
+  assert.strictEqual((await service.getPortfolio(USER)).rows[0].value, 2000);
+  assert.strictEqual((await service.getPortfolio('2')).rows[0].currentPrice, 200);
+  assert.strictEqual(fetch.urls.filter((u) => u.includes('/chart/AAPL')).length, 1, 'AAPL was fetched once, then cached');
+
+  await service.getPortfolio(USER, { fresh: true });
+  assert.strictEqual(fetch.urls.filter((u) => u.includes('/chart/AAPL')).length, 2, '"Refresh prices" skips the cache');
 });

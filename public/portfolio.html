@@ -1251,7 +1251,7 @@
     $('history-chart').classList.remove('loading');
     drawHistory();
 
-    const { points, missing } = history;
+    const { points, missing, undated = [] } = history;
     const enough = points.length >= 2;
     $('history-stats').hidden = !enough;
     $('history-legend').hidden = !enough;
@@ -1281,11 +1281,16 @@
       body.appendChild(tr);
     }
 
-    const note = missing.length
-      ? `No price history for ${missing.join(', ')}, so ${missing.length === 1 ? 'it is' : 'they are'} left out of this chart.`
-      : '';
-    $('history-note').textContent = note;
-    $('history-note').hidden = !note || missing.length === lastPortfolio.rows.length;
+    const notes = [];
+    if (missing.length && missing.length < lastPortfolio.rows.length) {
+      notes.push(`No price history for ${missing.join(', ')}, so ${missing.length === 1 ? 'it is' : 'they are'} left out of this chart.`);
+    }
+    if (undated.length && enough) {
+      notes.push(`Your brokerage's history doesn't say when some ${undated.join(', ')} shares were bought, `
+        + 'so those shares are counted from the start of the chart.');
+    }
+    $('history-note').textContent = notes.join(' ');
+    $('history-note').hidden = notes.length === 0;
   }
 
   async function loadHistory() {

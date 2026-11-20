@@ -73,6 +73,8 @@ lockout live in memory and reset on restart.
 - **Value over time:** your portfolio's market value next to the amount you had
   invested, over 1M / 3M / 6M / 1Y / 5Y. It's rebuilt from Yahoo Finance daily
   closes and each purchase's date, so it works for holdings you just added.
+  Synced holdings are dated from the brokerage's buy history; shares that
+  history doesn't cover are counted from the start, and the chart says so.
   Money you add shows as a step in the invested line, and the "Gain over this
   period" figure leaves it out. Hover (or focus the chart and use the arrow
   keys) to read any day; **Show as table** lists every point.
@@ -166,7 +168,7 @@ Four tiers, each with its own files:
 | Tier | Files | Responsibilities in Folio |
 |------|-------|---------------------------|
 | **Presentation** | `public/index.html`, `public/login.html`, `public/portfolio.html`, `public/account.js`, `public/charts.js` | Landing page; log in / create account; account menu (username, Log out); portfolio dashboard (summary tiles, then Holdings, Recommendations and News tabs; holdings table, purchase history); `charts.js` draws the value-over-time, gain/loss and allocation charts as plain SVG/HTML (no chart library); dialogs to add, edit and remove holdings, connect a brokerage, and resolve sync conflicts. Sends input to the server as JSON and renders the result. **No business rules and no storage access.** |
-| **Service** | `server.js` (HTTP entry), `src/service.js`, `src/auth.js`, `src/config.js` | `auth.js`: sign up, log in and out, password hashing (scrypt) and sessions; `server.js` turns the session cookie into whose portfolio a request is for, and sends logged-out requests to the login page (pages) or a 401 (API). `service.js` orchestrates each use case for that user: add/edit/remove a holding, build the portfolio view, connect/sync/disconnect a brokerage, resolve sync conflicts, build recommendations and the written summary. Asks the Domain to decide and the Data tier to load and save. `server.js` only parses requests and maps results and errors to HTTP status codes. `config.js` reads the settings from the environment once; `server.js` hands them down through `service.configure()`. |
+| **Service** | `server.js` (HTTP entry), `src/service.js`, `src/auth.js`, `src/config.js` | `auth.js`: sign up, log in and out, password hashing (scrypt) and sessions, and the rule that the first account takes over the data saved before accounts existed; `server.js` turns the session cookie into whose portfolio a request is for, and sends logged-out requests to the login page (pages) or a 401 (API). `service.js` orchestrates each use case for that user (every function takes the user's id first, with no default): add/edit/remove a holding, build the portfolio view with live prices, connect/sync/disconnect a brokerage, resolve sync conflicts, build recommendations and the written summary. Asks the Domain to decide and the Data tier to load and save. `server.js` only parses requests and maps results and errors to HTTP status codes. `config.js` reads the settings from the environment once; `server.js` hands them down through `service.configure()`. |
 | **Domain** | `src/domain.js`, `src/insights.js`, `src/advice.js`, `src/accounts.js` | The rules, as pure functions. `accounts.js`: what makes a valid username and password. `domain.js`: what makes a holding valid (ticker format, shares and price > 0, date not in the future); merging purchases into one row per ticker; value, total value and gain/loss (per holding and overall); allocation by ticker; value and amount invested per day for the value-over-time chart; applying the user's changes to synced holdings and detecting conflicts with fresh brokerage data. `insights.js`: the diversification score and concentration risk; headline sentiment; deciding which news is about which holding; the recommendation rules. `advice.js`: the facts given to the AI model, the checks on what it writes, and the rules-only summary. No I/O. |
 | **Data** | `src/data.js`, `src/snaptrade.js`, `src/prices.js`, `src/news.js`, `src/claude.js` | `data.js`: all SQLite access (accounts and sessions; each user's holdings, brokerage accounts, positions, buy history, and changes to synced holdings). `snaptrade.js`: the only code that uses the SnapTrade keys or calls SnapTrade; converts its data into Folio's shape. `prices.js`: the only code that fetches market prices (Yahoo Finance, with Finnhub as a backup), with a one-minute cache, and daily price history for the value-over-time chart (Yahoo, one-hour cache). `news.js`: the only code that fetches news (Finnhub company news, with Yahoo Finance as a backup), with a 15-minute cache. `claude.js`: the only code that calls the Claude API (optional), with a 6-hour cache per set of facts. |
 
@@ -203,9 +205,9 @@ flowchart LR
     subgraph System [Folio]
         direction TB
         ui[Web UI<br/>Presentation · public/<br/>-shows holdings, value, gain/loss<br/>-shows score, recommendations, news<br/>-collects holding entry & edits]
-        service[Application Service<br/>server.js, src/service.js<br/>-orchestrates add/edit/remove<br/>-builds portfolio summary<br/>-connects & syncs brokerage<br/>-builds recommendations]
-        domain[Domain Model<br/>src/domain.js, src/insights.js, src/advice.js<br/>-validates holdings<br/>-value, gain/loss, sync conflicts<br/>-risk score, news matching, recommendations<br/>-facts for the AI, checks on its answer]
-        data[Data Layer<br/>src/data.js, src/snaptrade.js,<br/>src/prices.js, src/news.js, src/claude.js<br/>-persists holdings & synced data<br/>-wraps SnapTrade, price, news and Claude clients]
+        service[Application Service<br/>server.js, src/service.js, src/auth.js<br/>-sign up, log in, sessions<br/>-orchestrates add/edit/remove<br/>-builds portfolio summary & value history<br/>-connects & syncs brokerage<br/>-builds recommendations]
+        domain[Domain Model<br/>src/domain.js, src/insights.js,<br/>src/advice.js, src/accounts.js<br/>-validates holdings and accounts<br/>-value, gain/loss, value over time, sync conflicts<br/>-risk score, news matching, recommendations<br/>-facts for the AI, checks on its answer]
+        data[Data Layer<br/>src/data.js, src/snaptrade.js,<br/>src/prices.js, src/news.js, src/claude.js<br/>-persists accounts, sessions, holdings & synced data<br/>-wraps SnapTrade, price, news and Claude clients]
         ui --> service --> domain
         service --> data
     end
@@ -234,6 +236,18 @@ operations are pure functions in `src/domain.js` and `src/insights.js`.
 ```mermaid
 classDiagram
     direction TB
+    class User {
+        -id: Integer
+        -username: String
+        -passwordHash: String
+        +validateNewAccount()
+    }
+
+    class Session {
+        -tokenHash: String
+        -expiresAt: Date
+    }
+
     class Portfolio {
         -totalValue: Decimal
         -gainLoss: Decimal
@@ -296,6 +310,8 @@ classDiagram
         +generateInsights()
     }
 
+    User "1" --> "1" Portfolio : owns
+    User "1" --> "many" Session : logged in as
     Portfolio "1" --> "many" Holding : manual
     Portfolio "1" --> "many" BrokeragePosition : synced
     PositionOverride "0..1" --> "1" BrokeragePosition : user change to
@@ -353,8 +369,10 @@ sequenceDiagram
 
     U->>UI: open portfolio dashboard
     UI->>S: GET /api/recommendations (getRecommendations)
-    S->>D: load holdings, synced positions & latest prices
+    S->>D: load the user's holdings & synced positions
     D-->>S: holdings
+    S->>D: getQuotes(tickers)
+    D-->>S: live prices (cached for a minute)
     S->>Dom: consolidateHoldings, scorePortfolio
     Dom-->>S: rows + risk score
     S->>Dom: identifyRelevantTopics(rows)

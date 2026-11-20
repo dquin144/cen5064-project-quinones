@@ -12,6 +12,8 @@ const service = require('../src/service.js');
 
 data.configure(loadConfig({ DB_FILE: ':memory:' }));
 
+const USER = '1'; // the account every test here acts as
+
 const NOW = Date.now();
 const secondsAgo = (hours) => Math.floor((NOW - hours * 3600000) / 1000);
 
@@ -36,7 +38,6 @@ function fakeYahoo({ quotes, newsFor = () => search(), newsDown = false }) {
 async function setUp(fetch) {
   prices.setFetchForTests(fetch);
   news.setFetchForTests(fetch);
-  await service.refreshPrices();
 }
 
 beforeEach(() => {
@@ -47,19 +48,19 @@ beforeEach(() => {
 });
 
 const add = (ticker, shares, purchasePrice) =>
-  service.addHolding({ ticker, shares: String(shares), purchasePrice: String(purchasePrice), purchaseDate: '2024-01-15' });
+  service.addHolding(USER, { ticker, shares: String(shares), purchasePrice: String(purchasePrice), purchaseDate: '2024-01-15' });
 
 test('an empty portfolio has no score, no recommendations and fetches no news', async () => {
   let calls = 0;
   await setUp(async () => { calls += 1; throw new Error('should not be called'); });
-  assert.deepStrictEqual(await service.getRecommendations(), { score: null, insights: [], news: [], newsIssue: null });
+  assert.deepStrictEqual(await service.getRecommendations(USER), { score: null, insights: [], news: [], newsIssue: null });
   assert.strictEqual(calls, 0);
 });
 
 test('the portfolio view includes the diversification score', async () => {
   add('VOO', 2, 400);
   await setUp(fakeYahoo({ quotes: { VOO: chart(500, 'Vanguard S&P 500 ETF', 'ETF') } }));
-  const { score } = service.getPortfolio();
+  const { score } = await service.getPortfolio(USER);
   assert.strictEqual(score.diversificationScore, 100);
   assert.strictEqual(score.riskLabel, 'Low');
 });
@@ -78,7 +79,7 @@ test('recommends based on holdings and the news about them', async () => {
       : search(story('v1', 'Index funds see record inflows', 'VOO'))),
   }));
 
-  const { score, insights, news: shown, newsIssue } = await service.getRecommendations({ now: NOW });
+  const { score, insights, news: shown, newsIssue } = await service.getRecommendations(USER, { now: NOW });
   const ids = insights.map((i) => i.id);
   assert.strictEqual(newsIssue, null);
   assert.ok(score.concentrationWarning); // TSLA is 2000 of 2500
@@ -94,7 +95,7 @@ test('recommends based on holdings and the news about them', async () => {
 test('when news is down, holding-based recommendations still come back', async () => {
   add('AAPL', 10, 100);
   await setUp(fakeYahoo({ quotes: { AAPL: chart(150, 'Apple Inc.') }, newsDown: true }));
-  const { insights, news: shown, newsIssue } = await service.getRecommendations();
+  const { insights, news: shown, newsIssue } = await service.getRecommendations(USER);
   assert.ok(insights.some((i) => i.id === 'low-diversification'));
   assert.deepStrictEqual(shown, []);
   assert.match(newsIssue, /Couldn't load news/);

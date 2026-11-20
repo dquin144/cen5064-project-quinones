@@ -3,11 +3,16 @@ const assert = require('node:assert');
 
 const { loadConfig } = require('../src/config.js');
 const data = require('../src/data.js');
+const prices = require('../src/prices.js');
 const service = require('../src/service.js');
 const auth = require('../src/auth.js');
 const { validateNewAccount, validateLogin } = require('../src/accounts.js');
 
 data.configure(loadConfig({ DB_FILE: ':memory:' }));
+
+// No live prices in these tests: every price lookup fails fast instead of going to
+// the network, so values come from the brokerage's price or are left out.
+prices.setFetchForTests(async () => { throw new Error('offline in tests'); });
 
 beforeEach(() => {
   data.closeDb();
@@ -110,28 +115,44 @@ test('the session token itself is not stored, only its hash', async () => {
 test('holdings belong to the account that added them', async () => {
   const dave = String((await auth.register({ username: 'dave', password: 'correct horse' })).user.id);
   const anna = String((await auth.register({ username: 'anna', password: 'correct horse' })).user.id);
-  service.addHolding(holding, dave);
-  service.addHolding({ ...holding, ticker: 'MSFT' }, anna);
-  assert.deepStrictEqual(service.getPortfolio(dave).rows.map((r) => r.ticker), ['AAPL']);
-  assert.deepStrictEqual(service.getPortfolio(anna).rows.map((r) => r.ticker), ['MSFT']);
+  service.addHolding(dave, holding);
+  service.addHolding(anna, { ...holding, ticker: 'MSFT' });
+  assert.deepStrictEqual((await service.getPortfolio(dave)).rows.map((r) => r.ticker), ['AAPL']);
+  assert.deepStrictEqual((await service.getPortfolio(anna)).rows.map((r) => r.ticker), ['MSFT']);
 
   // Anna can't edit or remove Dave's holding, even knowing its id.
-  const daveHoldingId = service.getPortfolio(dave).rows[0].holdings[0].id;
-  assert.throws(() => service.removeHolding(daveHoldingId, anna), service.NotFoundError);
-  assert.throws(() => service.updateHolding(daveHoldingId, holding, anna), service.NotFoundError);
-  assert.strictEqual(service.getPortfolio(dave).rows.length, 1);
+  const daveHoldingId = (await service.getPortfolio(dave)).rows[0].holdings[0].id;
+  assert.throws(() => service.removeHolding(anna, daveHoldingId), service.NotFoundError);
+  assert.throws(() => service.updateHolding(anna, daveHoldingId, holding), service.NotFoundError);
+  assert.strictEqual((await service.getPortfolio(dave)).rows.length, 1);
 });
 
 test('the first account takes over the holdings and brokerage data saved before login existed', async () => {
-  service.addHolding(holding); // saved as 'local', like before this change
-  data.saveBrokerageUser('local', { userId: 'snap-1', userSecret: 's' });
-  data.replaceBrokerageData('local', [{ id: 'acct-1', name: 'Robinhood' }], [{ accountId: 'acct-1', ticker: 'VTI', shares: 2, averagePrice: 200 }]);
+  // Saved the way Folio saved them before accounts existed.
+  const legacy = data.LEGACY_USER_ID;
+  service.addHolding(legacy, holding);
+  data.saveBrokerageUser(legacy, { userId: 'snap-1', userSecret: 's' });
+  data.replaceBrokerageData(legacy, [{ id: 'acct-1', name: 'Robinhood' }], [{ accountId: 'acct-1', ticker: 'VTI', shares: 2, averagePrice: 200 }]);
 
   const first = String((await auth.register({ username: 'dave', password: 'correct horse' })).user.id);
   const second = String((await auth.register({ username: 'anna', password: 'correct horse' })).user.id);
 
-  assert.deepStrictEqual(service.getPortfolio(first).rows.map((r) => r.ticker).sort(), ['AAPL', 'VTI']);
+  assert.deepStrictEqual((await service.getPortfolio(first)).rows.map((r) => r.ticker).sort(), ['AAPL', 'VTI']);
   assert.deepStrictEqual(data.getBrokerageUser(first), { userId: 'snap-1', userSecret: 's' });
-  assert.deepStrictEqual(service.getPortfolio(second).rows, []);
-  assert.deepStrictEqual(service.getPortfolio('local').rows, []);
+  assert.deepStrictEqual((await service.getPortfolio(second)).rows, []);
+  assert.deepStrictEqual((await service.getPortfolio(legacy)).rows, []);
+});
+
+test('the Data tier only stores accounts: creating one directly takes over nothing', async () => {
+  service.addHolding(data.LEGACY_USER_ID, holding);
+  const created = data.createUser('dave', 'scrypt$00$00');
+  assert.deepStrictEqual((await service.getPortfolio(String(created.id))).rows, []);
+  assert.strictEqual((await service.getPortfolio(data.LEGACY_USER_ID)).rows.length, 1);
+});
+
+test('if taking over the old data fails, the account is not created either', async (t) => {
+  t.mock.method(data, 'transferUserData', () => { throw new Error('disk full'); });
+  await assert.rejects(auth.register({ username: 'dave', password: 'correct horse' }), /disk full/);
+  assert.strictEqual(data.findUserByUsername('dave'), null);
+  assert.strictEqual(data.countUsers(), 0);
 });

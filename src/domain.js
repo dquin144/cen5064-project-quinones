@@ -111,8 +111,9 @@ function byDateDesc(a, b) {
 //   the brokerage's average cost, optional currentPrice and source). Shares, cost and
 //   value come only from these.
 // buys: past brokerage buy transactions ({ ticker, shares, purchasePrice, purchaseDate,
-//   source }). They only feed the purchase history shown to the user. A synced position
-//   with no recorded buys shows its average cost in the history instead.
+//   source }). Here they only feed the purchase history shown to the user; a synced
+//   position with no recorded buys shows its average cost in the history instead.
+//   (buildValueHistory also uses them, to date synced shares.)
 //
 // Each row's purchases are newest first (same date: most recently saved first, undated
 // last), so purchases[0] is the latest purchase. row.holdings lists the holdings the
@@ -187,21 +188,64 @@ function allocatePortfolio(rows, maxParts = 8) {
   return parts.map((p) => ({ ...p, percent: (p.value / total) * 100 }));
 }
 
+// Below this, a share count is rounding error (0.1 + 0.2 shares and the like).
+const SHARE_EPSILON = 1e-9;
+
+// The lots the value-over-time chart counts for one row: { shares, purchasePrice,
+// purchaseDate } with purchaseDate null when no date is known.
+//
+// A manual purchase is one lot with its own date. A synced position only has a
+// share count and an average cost, so its shares are dated from that account's buy
+// history: the newest buys first, since shares sold earlier are taken to be the
+// oldest ones (first in, first out). Shares the history doesn't cover (bought
+// before the brokerage's history starts, or moved in from another brokerage) stay
+// undated. Every lot keeps the position's average cost, so the invested line still
+// ends on the same total as the summary.
+function chartLots(row, buys) {
+  const lots = [];
+  let undatedShares = 0;
+  for (const h of row.holdings) {
+    if (h.purchaseDate) {
+      lots.push(h);
+      continue;
+    }
+    let left = h.shares;
+    const accountBuys = buys
+      .filter((b) => b.accountId != null && b.accountId === h.accountId && b.ticker.toUpperCase() === row.ticker)
+      .sort(byDateDesc);
+    for (const b of accountBuys) {
+      if (left <= SHARE_EPSILON) break;
+      const shares = Math.min(left, b.shares);
+      lots.push({ shares, purchasePrice: h.purchasePrice, purchaseDate: b.purchaseDate });
+      left -= shares;
+    }
+    if (left > SHARE_EPSILON) {
+      lots.push({ shares: left, purchasePrice: h.purchasePrice, purchaseDate: null });
+      undatedShares += left;
+    }
+  }
+  return { lots, undatedShares };
+}
+
 // The portfolio's market value on each trading day, next to how much money was in
 // it by then. Built from what the user holds today, so it shows "what my holdings
 // were worth", not a record of past sales.
 //
-// rows: consolidateHoldings() rows; each row.holdings entry counts from its
-//   purchaseDate on (a synced position has no date, so it counts throughout).
+// rows: consolidateHoldings() rows. Each purchase counts from its date on; synced
+//   positions are dated from buys (see chartLots).
 // history: Map<ticker, [{ date, close }]> oldest first (prices.getHistory).
 // livePrices: Map<ticker, price>. When given, the last day uses the live price, so
 //   the chart ends on the same total as the summary tiles.
+// buys: past brokerage buys ({ accountId, ticker, shares, purchaseDate }), the same
+//   list consolidateHoldings gets.
 //
 // A day only counts the holdings that are owned by then and have a close on or
 // before it, in both value and invested, so the gap between the lines is always
 // the gain on the same set of holdings. Days before anything was owned are dropped.
-// Returns { points: [{ date, value, invested }], missing: [tickers with no history] }.
-function buildValueHistory(rows, history, { livePrices = new Map() } = {}) {
+// Shares with no known date count on every day.
+// Returns { points: [{ date, value, invested }], missing: [tickers with no history],
+//   undated: [tickers with shares that have no known date] }.
+function buildValueHistory(rows, history, { livePrices = new Map(), buys = [] } = {}) {
   const tracked = rows.filter((r) => history.get(r.ticker)?.length > 0);
   const missing = rows.filter((r) => !tracked.includes(r)).map((r) => r.ticker);
   const dates = [...new Set(tracked.flatMap((r) => history.get(r.ticker).map((p) => p.date)))].sort();
@@ -209,7 +253,8 @@ function buildValueHistory(rows, history, { livePrices = new Map() } = {}) {
 
   // Per ticker: walk its closes alongside the dates, carrying the last close
   // forward over days it didn't trade (holidays differ between exchanges).
-  const cursors = tracked.map((r) => ({ row: r, closes: history.get(r.ticker), i: -1 }));
+  const cursors = tracked.map((r) => ({ row: r, closes: history.get(r.ticker), i: -1, ...chartLots(r, buys) }));
+  const undated = cursors.filter((c) => c.undatedShares > 0).map((c) => c.row.ticker);
   const cents = (n) => Math.round(n * 100) / 100;
   const points = [];
   for (const date of dates) {
@@ -221,16 +266,16 @@ function buildValueHistory(rows, history, { livePrices = new Map() } = {}) {
       if (c.i < 0) continue; // no close yet on this date (e.g. listed later)
       let close = c.closes[c.i].close;
       if (date === lastDate && livePrices.get(c.row.ticker) > 0) close = livePrices.get(c.row.ticker);
-      for (const h of c.row.holdings) {
-        if (h.purchaseDate && h.purchaseDate > date) continue;
+      for (const lot of c.lots) {
+        if (lot.purchaseDate && lot.purchaseDate > date) continue;
         owned = true;
-        value += h.shares * close;
-        invested += h.shares * h.purchasePrice;
+        value += lot.shares * close;
+        invested += lot.shares * lot.purchasePrice;
       }
     }
     if (owned) points.push({ date, value: cents(value), invested: cents(invested) });
   }
-  return { points, missing };
+  return { points, missing, undated };
 }
 
 module.exports = {

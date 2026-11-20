@@ -81,10 +81,21 @@ function clearFailuresForTests() {
 
 // Creates an account and logs it in. Returns { user: { id, username }, session }.
 // Throws AuthError 400 (invalid input, with errors per field) or 409 (taken).
+//
+// The first account ever created takes over the portfolio saved before accounts
+// existed (data.LEGACY_USER_ID), so upgrading Folio doesn't lose anyone's holdings.
+// Later accounts start empty. Both steps run in one transaction, so two sign-ups
+// can't both count as first.
 async function register(input, now = Date.now()) {
   const { username, password, errors } = validateNewAccount(input);
   if (Object.keys(errors).length > 0) throw new AuthError('Check the highlighted fields.', 400, errors);
-  const user = data.createUser(username, await hashPassword(password));
+  const passwordHash = await hashPassword(password);
+  const user = data.transaction(() => {
+    const first = data.countUsers() === 0;
+    const created = data.createUser(username, passwordHash);
+    if (created && first) data.transferUserData(data.LEGACY_USER_ID, String(created.id));
+    return created;
+  });
   if (!user) {
     throw new AuthError('That username is taken.', 409, { username: 'That username is taken. Pick another, or log in.' });
   }

@@ -2,6 +2,10 @@
 // the SnapTrade client to talk to brokerages, the price client for market prices,
 // the news client for news about the user's holdings, and the Claude client for
 // the written summary and AI recommendations.
+//
+// Every function works on one user's portfolio and takes that user's id first (an
+// account id from auth.js, as a string). There is no default: a call that leaves
+// it out throws (data.js checks it) instead of reading someone else's data.
 
 const crypto = require('node:crypto');
 const {
@@ -27,17 +31,6 @@ const snaptrade = require('./snaptrade');
 const prices = require('./prices');
 const news = require('./news');
 const claude = require('./claude');
-
-// Every function below works on one user's portfolio, given as userId (an account
-// id from auth.js, as a string). 'local' owns data saved before accounts existed,
-// and is the default so tests and scripts can leave it out; the first account
-// created takes that data over (data.claimLocalData).
-const APP_USER_ID = 'local';
-
-// Per user, the quotes from their latest refreshPrices():
-// userId -> Map<ticker, { price, asOf, source, name?, assetType? }>.
-const latestQuotes = new Map();
-const quotesFor = (userId) => latestQuotes.get(userId) ?? new Map();
 
 // Per user, the message from their last SnapTrade failure, shown on the page until
 // a SnapTrade request works again. Everything else in Folio keeps working meanwhile.
@@ -86,78 +79,32 @@ class NotFoundError extends Error {
   }
 }
 
-// Returns { errors }. An empty errors object means the holding was saved.
-function addHolding(input, userId = APP_USER_ID) {
-  const { holding, errors } = validateHolding(input);
-  if (Object.keys(errors).length === 0) data.saveHolding(holding, userId);
-  return { errors };
-}
-
-// Same rules as adding. Returns { errors }; throws NotFoundError for an unknown id.
-function updateHolding(id, input, userId = APP_USER_ID) {
-  const { holding, errors } = validateHolding(input);
-  if (Object.keys(errors).length > 0) return { errors };
-  if (!data.updateHolding(id, holding, userId)) throw new NotFoundError();
-  return { errors };
-}
-
-function removeHolding(id, userId = APP_USER_ID) {
-  if (!data.deleteHolding(id, userId)) throw new NotFoundError();
-}
-
-// Edits and removals of synced holdings are saved as the user's own changes;
-// the brokerage's data underneath is untouched. A later sync asks the user
-// which to keep if the two disagree.
-function editBrokeragePosition(id, input, userId = APP_USER_ID) {
-  const position = data.getBrokeragePosition(userId, id);
-  if (!position) throw new NotFoundError();
-  const { values, errors } = validatePositionEdit(input);
-  if (Object.keys(errors).length > 0) return { errors };
-  data.saveOverride(userId, { accountId: position.accountId, ticker: position.ticker, action: 'edit', ...values });
-  return { errors };
-}
-
-function removeBrokeragePosition(id, userId = APP_USER_ID) {
-  const position = data.getBrokeragePosition(userId, id);
-  if (!position) throw new NotFoundError();
-  data.saveOverride(userId, { accountId: position.accountId, ticker: position.ticker, action: 'remove' });
-}
-
-// keepMine: true keeps the user's changes; false discards the ones the brokerage
-// disagrees with, restoring the brokerage's numbers (and removed holdings).
-function resolveSyncConflicts(keepMine, userId = APP_USER_ID) {
-  if (!keepMine) {
-    const { conflicts } = findConflicts(data.loadBrokeragePositions(userId), data.loadOverrides(userId));
-    data.deleteOverrides(userId, conflicts);
-  }
-  return getPortfolio(userId);
-}
-
-// Fetches live prices for every ticker the user holds. Never throws: tickers that
-// can't be priced fall back to the brokerage's price, or show no price.
-// fresh: true skips the price cache (the "Refresh prices" button).
-async function refreshPrices({ fresh = false, userId = APP_USER_ID } = {}) {
-  const tickers = [
-    ...data.loadHoldings(userId).map((h) => h.ticker),
-    ...data.loadBrokeragePositions(userId).map((p) => p.ticker),
-  ];
-  latestQuotes.set(userId, await prices.getQuotes(tickers, { fresh }));
-}
+// ---- Loading a portfolio, with live prices ----
 
 // What the price source told us about each ticker: Map<ticker, { name, assetType }>.
 // Lets the Domain tell funds from single stocks and find company names in news.
-function profiles(userId) {
-  return new Map([...quotesFor(userId)].map(([ticker, q]) => [ticker, { name: q.name ?? null, assetType: q.assetType ?? null }]));
+function profilesFrom(quotes) {
+  return new Map([...quotes].map(([ticker, q]) => [ticker, { name: q.name ?? null, assetType: q.assetType ?? null }]));
 }
 
-function getPortfolio(userId = APP_USER_ID) {
-  const quotes = quotesFor(userId);
+// Loads one user's holdings and fetches live prices for them. Everything that
+// shows values starts here, so prices never depend on something else having run
+// first. prices.js caches quotes for a minute, so calling this often is cheap.
+// Never throws for price problems: tickers that can't be priced fall back to the
+// brokerage's price, or show no price.
+// fresh: true skips the price cache (the "Refresh prices" button).
+// Returns { view, quotes, buys, profiles }: view is what getPortfolio returns; the
+// rest is for the functions below that build on it.
+async function loadPortfolio(userId, { fresh = false } = {}) {
+  const holdings = data.loadHoldings(userId);
+  const positions = applyOverrides(data.loadBrokeragePositions(userId), data.loadOverrides(userId));
+  const quotes = await prices.getQuotes([...holdings, ...positions].map((h) => h.ticker), { fresh });
   const livePrice = (ticker) => quotes.get(ticker.toUpperCase())?.price ?? null;
-  const manual = data.loadHoldings(userId).map((h) => ({ ...h, kind: 'manual', currentPrice: livePrice(h.ticker) }));
+
+  const manual = holdings.map((h) => ({ ...h, kind: 'manual', currentPrice: livePrice(h.ticker) }));
   // Synced positions (with the user's changes applied) become undated purchases at
   // their average cost, labeled with their account. A live price beats the
   // brokerage's last price.
-  const positions = applyOverrides(data.loadBrokeragePositions(userId), data.loadOverrides(userId));
   const synced = positions.map((p) => ({
     id: p.id,
     kind: 'synced',
@@ -167,6 +114,7 @@ function getPortfolio(userId = APP_USER_ID) {
     purchasePrice: p.averagePrice,
     purchaseDate: null,
     source: p.accountName,
+    accountId: p.accountId,
     currentPrice: livePrice(p.ticker) ?? p.price,
   }));
   const buys = data.loadBrokerageBuys(userId).map((b) => ({
@@ -175,41 +123,99 @@ function getPortfolio(userId = APP_USER_ID) {
     purchasePrice: b.price,
     purchaseDate: b.date,
     source: b.accountName,
+    accountId: b.accountId,
   }));
   const rows = consolidateHoldings([...manual, ...synced], buys);
+  const profiles = profilesFrom(quotes);
   // Oldest live quote shown, so the page can say "Prices as of ...".
   const asOfs = rows.map((r) => quotes.get(r.ticker)?.asOf).filter(Boolean).sort();
-  return {
+  const view = {
     rows,
     pricesAsOf: asOfs[0] ?? null,
     summary: { ...summarizePortfolio(rows), accountsConnected: data.countBrokerageAccounts(userId) },
     allocation: allocatePortfolio(rows),
-    score: scorePortfolio(rows, profiles(userId)),
+    score: scorePortfolio(rows, profiles),
     brokerageConfigured: snaptrade.isConfigured(),
     brokerageIssue: brokerageIssues.get(userId) ?? null,
   };
+  return { view, quotes, buys, profiles };
 }
+
+// The portfolio view: rows, totals, allocation, risk score and brokerage status.
+async function getPortfolio(userId, { fresh = false } = {}) {
+  return (await loadPortfolio(userId, { fresh })).view;
+}
+
+// ---- Manual holdings ----
+
+// Returns { errors }. An empty errors object means the holding was saved.
+function addHolding(userId, input) {
+  const { holding, errors } = validateHolding(input);
+  if (Object.keys(errors).length === 0) data.saveHolding(userId, holding);
+  return { errors };
+}
+
+// Same rules as adding. Returns { errors }; throws NotFoundError for an unknown id.
+function updateHolding(userId, id, input) {
+  const { holding, errors } = validateHolding(input);
+  if (Object.keys(errors).length > 0) return { errors };
+  if (!data.updateHolding(userId, id, holding)) throw new NotFoundError();
+  return { errors };
+}
+
+function removeHolding(userId, id) {
+  if (!data.deleteHolding(userId, id)) throw new NotFoundError();
+}
+
+// ---- Changes to synced holdings ----
+
+// Edits and removals of synced holdings are saved as the user's own changes;
+// the brokerage's data underneath is untouched. A later sync asks the user
+// which to keep if the two disagree.
+function editBrokeragePosition(userId, id, input) {
+  const position = data.getBrokeragePosition(userId, id);
+  if (!position) throw new NotFoundError();
+  const { values, errors } = validatePositionEdit(input);
+  if (Object.keys(errors).length > 0) return { errors };
+  data.saveOverride(userId, { accountId: position.accountId, ticker: position.ticker, action: 'edit', ...values });
+  return { errors };
+}
+
+function removeBrokeragePosition(userId, id) {
+  const position = data.getBrokeragePosition(userId, id);
+  if (!position) throw new NotFoundError();
+  data.saveOverride(userId, { accountId: position.accountId, ticker: position.ticker, action: 'remove' });
+}
+
+// keepMine: true keeps the user's changes; false discards the ones the brokerage
+// disagrees with, restoring the brokerage's numbers (and removed holdings).
+// Returns the portfolio view.
+async function resolveSyncConflicts(userId, keepMine) {
+  if (!keepMine) {
+    const { conflicts } = findConflicts(data.loadBrokeragePositions(userId), data.loadOverrides(userId));
+    data.deleteOverrides(userId, conflicts);
+  }
+  return getPortfolio(userId);
+}
+
+// ---- Charts, recommendations and advice ----
 
 // The portfolio's value over time, for the "Value over time" chart. range is one of
 // prices.HISTORY_RANGES ('1mo', '3mo', '6mo', '1y', '5y'; anything else means '1y').
-// Uses the latest prices for the last day, so call refreshPrices() first.
-// Never throws for price problems: tickers without history are listed in missing.
-async function getValueHistory({ range = '1y', userId = APP_USER_ID } = {}) {
+// Synced shares are dated from the brokerage's buy history. Never throws for price
+// problems: tickers without history are listed in missing, and tickers with shares
+// that have no known date in undated.
+async function getValueHistory(userId, { range = '1y' } = {}) {
   if (!prices.HISTORY_RANGES[range]) range = '1y';
-  const { rows } = getPortfolio(userId);
+  const { view: { rows }, quotes, buys } = await loadPortfolio(userId);
   const history = rows.length > 0 ? await prices.getHistory(rows.map((r) => r.ticker), range) : new Map();
-  const livePrices = new Map([...quotesFor(userId)].map(([ticker, q]) => [ticker, q.price]));
-  return { range, ...buildValueHistory(rows, history, { livePrices }) };
+  const livePrices = new Map([...quotes].map(([ticker, q]) => [ticker, q.price]));
+  return { range, ...buildValueHistory(rows, history, { livePrices, buys }) };
 }
 
-// Recommendations for the current portfolio (UC4): the risk score, rule-based
-// insights, and the news about what the user owns. Uses the latest prices, so call
-// refreshPrices() first. Never throws for news problems: if no news source answers,
-// the insights that don't need news are still returned, with newsIssue explaining.
-// fresh: true skips the news cache.
-async function getRecommendations({ fresh = false, now = Date.now(), userId = APP_USER_ID } = {}) {
-  const { rows, summary, score } = getPortfolio(userId);
-  const topics = identifyRelevantTopics(rows, profiles(userId));
+// The risk score, rule-based insights and matched news for a loaded portfolio.
+async function recommendationsFor({ view: { rows, summary, score }, profiles }, { fresh, now }) {
+  const topics = identifyRelevantTopics(rows, profiles);
   const { articles, failed } = topics.length > 0
     ? await news.fetchNews(topics.map((t) => t.ticker), { fresh })
     : { articles: [], failed: [] };
@@ -217,10 +223,19 @@ async function getRecommendations({ fresh = false, now = Date.now(), userId = AP
   const allFailed = topics.length > 0 && failed.length === topics.length;
   return {
     score,
-    insights: generateInsights({ rows, summary, score, news: matches, profiles: profiles(userId), now }),
+    insights: generateInsights({ rows, summary, score, news: matches, profiles, now }),
     news: topNews(matches),
     newsIssue: allFailed ? "Couldn't load news right now. The suggestions below are based on your holdings only." : null,
   };
+}
+
+// Recommendations for the current portfolio (UC4): the risk score, rule-based
+// insights, and the news about what the user owns. Never throws for news problems:
+// if no news source answers, the insights that don't need news are still returned,
+// with newsIssue explaining.
+// fresh: true skips the news cache.
+async function getRecommendations(userId, { fresh = false, now = Date.now() } = {}) {
+  return recommendationsFor(await loadPortfolio(userId), { fresh, now });
 }
 
 // The written summary of the portfolio and Claude's recommendations: a few specific
@@ -232,9 +247,10 @@ async function getRecommendations({ fresh = false, now = Date.now(), userId = AP
 //   { summary, recommendations, dropped, source: 'claude' | 'rules', model,
 //     generatedAt, aiConfigured, aiIssue }
 // fresh: true asks Claude for a new answer instead of the cached one.
-async function getAdvice({ fresh = false, now = Date.now(), userId = APP_USER_ID } = {}) {
-  const { rows, summary } = getPortfolio(userId);
-  const { score, insights, news: shown } = await getRecommendations({ now, userId });
+async function getAdvice(userId, { fresh = false, now = Date.now() } = {}) {
+  const loaded = await loadPortfolio(userId);
+  const { rows, summary } = loaded.view;
+  const { score, insights, news: shown } = await recommendationsFor(loaded, { fresh: false, now });
   const rulesOnly = fallbackAdvice({ rows, summary, score, insights });
   const fromRules = (aiIssue) => ({
     ...rulesOnly,
@@ -247,7 +263,7 @@ async function getAdvice({ fresh = false, now = Date.now(), userId = APP_USER_ID
   });
   if (rows.length === 0 || !claude.isConfigured()) return fromRules(null);
 
-  const brief = buildAdvisorBrief({ rows, summary, score, insights, news: shown, profiles: profiles(userId) });
+  const brief = buildAdvisorBrief({ rows, summary, score, insights, news: shown, profiles: loaded.profiles });
   try {
     const { advice, model, generatedAt } = await claude.generateAdvice(brief, { fresh });
     const checked = validateAdvice(advice, {
@@ -255,6 +271,12 @@ async function getAdvice({ fresh = false, now = Date.now(), userId = APP_USER_ID
       heldTickers: rows.map((r) => r.ticker),
       insightIds: insights.map((i) => i.id),
     });
+    // Logged so it's visible how often the check removes something, and which
+    // numbers did it (often a total Claude worked out itself; see ADR-006).
+    if (checked?.unverified.length > 0) {
+      console.info(`Claude used numbers that aren't in the brief (${checked.unverified.join(', ')}); `
+        + `removed ${checked.dropped} recommendation(s)${checked.summary === null ? ' and the summary' : ''}.`);
+    }
     if (!checked) return fromRules("Claude's answer didn't pass Folio's checks, so these come from the rules.");
     return {
       summary: checked.summary ?? rulesOnly.summary, // a summary with unverifiable numbers is replaced
@@ -273,8 +295,10 @@ async function getAdvice({ fresh = false, now = Date.now(), userId = APP_USER_ID
   }
 }
 
+// ---- Brokerage connection ----
+
 // Returns the SnapTrade Connection Portal URL to send the user to.
-async function startBrokerageConnection(redirectUrl, userId = APP_USER_ID) {
+async function startBrokerageConnection(userId, redirectUrl) {
   if (!snaptrade.isConfigured()) throw new NotConfiguredError();
   let user = data.getBrokerageUser(userId);
   if (!user) {
@@ -284,7 +308,9 @@ async function startBrokerageConnection(redirectUrl, userId = APP_USER_ID) {
   return brokerage(userId, () => snaptrade.getConnectionUrl(user, redirectUrl));
 }
 
-async function syncBrokerage(userId = APP_USER_ID) {
+// Returns the portfolio view (priced, including newly synced tickers) and the
+// conflicts between the user's changes and the fresh brokerage data.
+async function syncBrokerage(userId) {
   if (!snaptrade.isConfigured()) throw new NotConfiguredError();
   const user = data.getBrokerageUser(userId);
   if (!user) throw new NotConnectedError();
@@ -296,12 +322,12 @@ async function syncBrokerage(userId = APP_USER_ID) {
   // quietly drop changes that no longer matter and report the rest as conflicts.
   const { conflicts, settled } = findConflicts(data.loadBrokeragePositions(userId), data.loadOverrides(userId));
   data.deleteOverrides(userId, settled);
-  return { ...getPortfolio(userId), conflicts };
+  return { ...(await getPortfolio(userId)), conflicts };
 }
 
 // Revokes SnapTrade's access to every connected brokerage and removes synced
-// holdings from Folio. Manual holdings are kept.
-async function disconnectBrokerage(userId = APP_USER_ID) {
+// holdings from Folio. Manual holdings are kept. Returns the portfolio view.
+async function disconnectBrokerage(userId) {
   if (!snaptrade.isConfigured()) throw new NotConfiguredError();
   const user = data.getBrokerageUser(userId);
   if (user) await brokerage(userId, () => snaptrade.disconnectAll(user));
@@ -319,7 +345,6 @@ module.exports = {
   editBrokeragePosition,
   removeBrokeragePosition,
   resolveSyncConflicts,
-  refreshPrices,
   getPortfolio,
   getValueHistory,
   getRecommendations,
