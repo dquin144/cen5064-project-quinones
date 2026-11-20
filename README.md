@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/dquin144/cen5064-project-quinones/actions/workflows/ci.yml/badge.svg)](https://github.com/dquin144/cen5064-project-quinones/actions/workflows/ci.yml)
 
-**Student:** [David Quinones] · **Course:** CEN 5064 Software Design, Fall 2026 · **Partner:** [ASantana0924]
+**Student:** David Quinones · **Course:** CEN 5064 Software Design, Fall 2026 · **Partner:** ASantana0924
 
 ## Purpose & scope
 
@@ -22,7 +22,7 @@ their portfolio without building spreadsheets.
 | UC1 | **Build and maintain a portfolio by hand:** add a holding (ticker, shares, purchase price, purchase date), edit or remove it, or import many from a CSV file and export them; invalid input is rejected | ✅ Working |
 | UC2 | **Import holdings from a brokerage:** connect a brokerage read-only (E*TRADE, Robinhood, Schwab, Fidelity, …), sync and disconnect | ✅ Working |
 | UC3 | **See how the portfolio is doing:** total value, gain/loss, allocation, value-over-time chart (optionally against the S&P 500, Nasdaq-100, Dow or total market), diversification and concentration scores | ✅ Working |
-| UC4 | **Get news and recommendations for my holdings:** rule-based insights and news matched to what the user owns | ✅ Working |
+| UC4 | **Get news and recommendations for my holdings:** a diversification score, rule-based findings and news matched to what the user owns, turned into prioritized recommendations by Claude when an API key is set | ✅ Working |
 | UC5 | **Have my own account:** sign up and log in with a username and password; each account sees only its own portfolio; log out | ✅ Working |
 
 **Scope:** Folio runs locally (one server, several accounts), covers US stocks and ETFs, and
@@ -63,7 +63,8 @@ survives stopping and restarting the server, a reboot, and switching git
 branches (`data/` is gitignored, so git never touches it). The server prints the
 database path when it starts and closes the file cleanly on Ctrl+C. To keep the
 database somewhere else, set `DB_FILE` (for example
-`$env:DB_FILE="D:olioolio.db"; npm start`). To back it up, copy that file
+`$env:DB_FILE="D:\folio\folio.db"; npm start` in Windows PowerShell, or
+`DB_FILE=~/folio/folio.db npm start` on macOS/Linux). To back it up, copy that file
 while the server is stopped; deleting it starts Folio from scratch.
 `test/persistence.test.js` checks this by restarting a real server on the same
 file. Only short-lived caches (prices, news, AI answers) and the failed-login
@@ -220,8 +221,8 @@ flowchart LR
 
     subgraph System [Folio]
         direction TB
-        ui[Web UI<br/>Presentation · public/<br/>-shows holdings, value, gain/loss<br/>-shows score, recommendations, news<br/>-collects holding entry & edits]
-        service[Application Service<br/>server.js, src/service.js, src/auth.js<br/>-sign up, log in, sessions<br/>-orchestrates add/edit/remove<br/>-builds portfolio summary & value history<br/>-connects & syncs brokerage<br/>-builds recommendations]
+        ui[Web UI<br/>Presentation · public/<br/>-shows holdings, value, gain/loss<br/>-charts value over time, optionally vs. an index<br/>-shows score, recommendations, news<br/>-collects holding entry, edits & CSV files]
+        service[Application Service<br/>server.js, src/service.js, src/auth.js<br/>-sign up, log in, sessions<br/>-orchestrates add/edit/remove, CSV import & export<br/>-builds portfolio summary & value history<br/>-connects & syncs brokerage<br/>-builds recommendations]
         domain[Domain Model<br/>src/domain.js, src/insights.js,<br/>src/advice.js, src/accounts.js, src/holdingsCsv.js<br/>-validates holdings and accounts<br/>-reads & writes holdings as CSV<br/>-value, gain/loss, value over time, sync conflicts<br/>-risk score, news matching, recommendations<br/>-facts for the AI, checks on its answer]
         data[Data Layer<br/>src/data.js, src/snaptrade.js,<br/>src/prices.js, src/news.js, src/claude.js<br/>-persists accounts, sessions, holdings & synced data<br/>-wraps SnapTrade, price, news and Claude clients]
         ui --> service --> domain
@@ -247,7 +248,8 @@ flowchart LR
 ### UML — Class diagram
 
 The core domain concepts. In code they are plain JavaScript objects, and the
-operations are pure functions in `src/domain.js` and `src/insights.js`.
+operations are pure functions in the Domain tier (`src/domain.js`,
+`src/insights.js` and `src/accounts.js`).
 
 ```mermaid
 classDiagram
@@ -317,6 +319,18 @@ classDiagram
         +matchNewsToHoldings()
     }
 
+    class ValueHistory {
+        -points: date, value, invested, benchmark
+        -missing: String[]
+        -undated: String[]
+        +buildValueHistory()
+    }
+
+    class Benchmark {
+        -name: String
+        -ticker: SPY, QQQ, DIA or VTI
+    }
+
     class Insight {
         -severity: warning, info or positive
         -ticker: String
@@ -332,6 +346,8 @@ classDiagram
     Portfolio "1" --> "many" BrokeragePosition : synced
     PositionOverride "0..1" --> "1" BrokeragePosition : user change to
     Portfolio "1" --> "0..1" RiskScore : scored by
+    Portfolio "1" --> "1" ValueHistory : charted as
+    ValueHistory ..> Benchmark : compared with
     NewsArticle "many" --> "1..many" Holding : about
     Insight "many" --> "1" Portfolio : recommends for
     Insight ..> RiskScore : uses
@@ -361,6 +377,8 @@ sequenceDiagram
         D-->>S: saved
         S->>D: load holdings & synced positions
         D-->>S: holdings
+        S->>D: getQuotes(tickers)
+        D-->>S: live prices (cached for a minute)
         S->>Dom: consolidateHoldings, summarizePortfolio
         Dom-->>S: rows + totals
         S-->>UI: 201 portfolio
@@ -419,21 +437,25 @@ number that isn't in the brief, before it reaches the page. With no key, or if
 Claude fails, `fallbackAdvice` writes the summary from the rules and the page
 shows the findings as the recommendations.
 
-## Plan for the second half
+## Second half: plan vs. delivered
 
-A rough plan; the order and scope may shift as the project develops.
+The midterm plan, and what was built. Everything planned shipped. Login came
+earlier than planned, and three things were added on top: Claude-written
+recommendations (ADR-006), the value-over-time chart with an index comparison
+(ADR-008), and CSV import/export.
 
-| Weeks | Focus | Use case |
-|-------|-------|----------|
-| 8 | Midterm: merge open work, docs current | — |
-| 9–10 | Live prices, allocation breakdown, per-holding gain/loss | UC3 |
-| 11–12 | Portfolio scores (diversification, concentration) and news for holdings | UC3, UC4 |
-| 13–14 | Recommendations/insights, login, buffer for anything that slipped | UC4 |
-| 15–16 | Polish, final docs, final deliverable | — |
+| Weeks | Planned | Delivered | Use case |
+|-------|---------|-----------|----------|
+| 8 | Midterm: merge open work, docs current | Midterm docs and ADRs in place (merged Oct 11); first live stock prices | — |
+| 9–10 | Live prices, allocation breakdown, per-holding gain/loss | Live prices (Yahoo Finance, Finnhub backup); SnapTrade failures handled without breaking the app; per-holding gain/loss and allocation; Open/Closed refactor of the price sources | UC2, UC3 |
+| 11–12 | Portfolio scores (diversification, concentration) and news for holdings | Diversification score and concentration risk; news matched to holdings; rule-based findings, written up by Claude with every number checked; Singleton config | UC3, UC4 |
+| 13–14 | Recommendations/insights, login, buffer for anything that slipped | Accounts and login with a private portfolio each (done in week 11); value-over-time, gain/loss and allocation charts; persistence test; peer-review fixes; CSV import/export; index comparison | UC1, UC3, UC5 |
+| 15–16 | Polish, final docs, final deliverable | Final documentation update (this README, ADR-008); final deliverable | — |
 
 **Risks**
 
-- **Free-tier API limits** (market data, SnapTrade): cache prices and fall back to the last brokerage price.
+- **Free-tier API limits** (market data, news, SnapTrade): prices, history, news and AI answers are cached, and prices fall back to Finnhub and then the last brokerage price.
+- **Unofficial Yahoo Finance endpoints** could change: a ticker without a price or history is shown as "—" or left out of the chart with a note, and nothing else breaks.
 - **Older Node versions** can't run the app: the required version is stated above, and CI runs on Node 24.
 
 ## Architecture Decision Records
@@ -449,6 +471,7 @@ Decisions live in [`docs/adr/`](docs/adr/).
 | [005](docs/adr/adr-005.md) | News from Finnhub with a Yahoo fallback; rule-based recommendations instead of an LLM | accepted, amended by 006 |
 | [006](docs/adr/adr-006.md) | Claude writes the recommendations from Folio's numbers; Folio checks every number | accepted |
 | [007](docs/adr/adr-007.md) | Username/password accounts with server-side sessions in SQLite | accepted |
+| [008](docs/adr/adr-008.md) | Plain SVG charts; value history rebuilt from daily closes; compare with the same money in an index fund | accepted |
 
 ## Weekly log
 
@@ -466,3 +489,20 @@ Decisions live in [`docs/adr/`](docs/adr/).
   dashboard, brokerage connection through SnapTrade, portfolio value and gain/loss,
   edit/remove holdings with sync-conflict handling, and README/ADR updates
   for the midterm.
+- **Week 8 (Oct 12):** First midterm peer review. Built
+  live stock prices (Yahoo Finance, with Finnhub as a backup) and added the
+  midterm output screenshots.
+- **Week 9 (Oct 19):** Live prices merged; second midterm peer review (same
+  feedback as week 8). No new feature commits.
+- **Week 10 (Oct 26):** SnapTrade failures handled without breaking the app;
+  Open/Closed refactor of the price sources; per-holding gain/loss and the
+  allocation breakdown.
+- **Week 11 (Nov 2):** Singleton pattern for the app config; recommendations
+  and news for holdings (UC4), with Claude-written advice checked against
+  Folio's numbers; accounts and login with a private portfolio each (UC5).
+- **Week 12 (Nov 9):** The rest of weeks 10–11 merged into main, with a test and README
+  fix after the merge; first final-round peer review.
+- **Week 13 (Nov 16):** Value-over-time, gain/loss and allocation charts, and a
+  test that data survives a restart; second final-round peer review; every
+  peer-review point fixed; CSV import/export; comparison with the S&P 500 and
+  other indexes; final documentation update and ADR-008.
