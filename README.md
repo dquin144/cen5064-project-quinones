@@ -19,7 +19,7 @@ their portfolio without building spreadsheets.
 
 | # | Use case | Status |
 |---|----------|--------|
-| UC1 | **Build and maintain a portfolio by hand:** add a holding (ticker, shares, purchase price, purchase date), edit or remove it; invalid input is rejected | ✅ Working |
+| UC1 | **Build and maintain a portfolio by hand:** add a holding (ticker, shares, purchase price, purchase date), edit or remove it, or import many from a CSV file and export them; invalid input is rejected | ✅ Working |
 | UC2 | **Import holdings from a brokerage:** connect a brokerage read-only (E*TRADE, Robinhood, Schwab, Fidelity, …), sync and disconnect | ✅ Working |
 | UC3 | **See how the portfolio is doing:** total value, gain/loss, allocation, value-over-time chart (optionally against the S&P 500, Nasdaq-100, Dow or total market), diversification and concentration scores | ✅ Working |
 | UC4 | **Get news and recommendations for my holdings:** rule-based insights and news matched to what the user owns | ✅ Working |
@@ -145,6 +145,16 @@ a refresh or a server restart. Enter the ticker `AAPL!` and the Domain tier
 rejects it with "Invalid ticker symbol". Click **Edit** on the row to edit or
 remove the purchase.
 
+**Import and export (CSV).** **Import CSV** adds many purchases at once from a
+file with the columns `Ticker, Shares, Purchase price, Purchase date` (the
+dialog links a template; common names like Symbol, Quantity or Date work too,
+and so do `$1,234.50` prices and `1/15/2024` dates). Every row gets the same
+checks as **Add holding**. If any row fails, nothing is imported and the dialog
+lists each problem by row. Purchases already in your portfolio aren't added
+again, so importing a file twice is safe. **Export CSV** downloads all your
+holdings (synced ones are marked `(synced)` and skipped if you import the file
+back). A file can have up to 1,000 holdings.
+
 ### Optional: connect a brokerage (SnapTrade)
 
 Everything above works without this. To enable "Connect brokerage" you need
@@ -173,9 +183,9 @@ Four tiers, each with its own files:
 
 | Tier | Files | Responsibilities in Folio |
 |------|-------|---------------------------|
-| **Presentation** | `public/index.html`, `public/login.html`, `public/portfolio.html`, `public/account.js`, `public/charts.js` | Landing page; log in / create account; account menu (username, Log out); portfolio dashboard (summary tiles, then Holdings, Recommendations and News tabs; holdings table, purchase history); `charts.js` draws the value-over-time, gain/loss and allocation charts as plain SVG/HTML (no chart library); dialogs to add, edit and remove holdings, connect a brokerage, and resolve sync conflicts. Sends input to the server as JSON and renders the result. **No business rules and no storage access.** |
-| **Service** | `server.js` (HTTP entry), `src/service.js`, `src/auth.js`, `src/config.js` | `auth.js`: sign up, log in and out, password hashing (scrypt) and sessions, and the rule that the first account takes over the data saved before accounts existed; `server.js` turns the session cookie into whose portfolio a request is for, and sends logged-out requests to the login page (pages) or a 401 (API). `service.js` orchestrates each use case for that user (every function takes the user's id first, with no default): add/edit/remove a holding, build the portfolio view with live prices, connect/sync/disconnect a brokerage, resolve sync conflicts, build recommendations and the written summary. Asks the Domain to decide and the Data tier to load and save. `server.js` only parses requests and maps results and errors to HTTP status codes. `config.js` reads the settings from the environment once; `server.js` hands them down through `service.configure()`. |
-| **Domain** | `src/domain.js`, `src/insights.js`, `src/advice.js`, `src/accounts.js` | The rules, as pure functions. `accounts.js`: what makes a valid username and password. `domain.js`: what makes a holding valid (ticker format, shares and price > 0, date not in the future); merging purchases into one row per ticker; value, total value and gain/loss (per holding and overall); allocation by ticker; value and amount invested per day for the value-over-time chart, and the same money in an index fund for the comparison line (`BENCHMARKS` lists the four funds); applying the user's changes to synced holdings and detecting conflicts with fresh brokerage data. `insights.js`: the diversification score and concentration risk; headline sentiment; deciding which news is about which holding; the recommendation rules. `advice.js`: the facts given to the AI model, the checks on what it writes, and the rules-only summary. No I/O. |
+| **Presentation** | `public/index.html`, `public/login.html`, `public/portfolio.html`, `public/account.js`, `public/charts.js` | Landing page; log in / create account; account menu (username, Log out); portfolio dashboard (summary tiles, then Holdings, Recommendations and News tabs; holdings table, purchase history); `charts.js` draws the value-over-time, gain/loss and allocation charts as plain SVG/HTML (no chart library); dialogs to add, edit and remove holdings, import a CSV file, connect a brokerage, and resolve sync conflicts. Sends input to the server as JSON and renders the result. **No business rules and no storage access.** |
+| **Service** | `server.js` (HTTP entry), `src/service.js`, `src/auth.js`, `src/config.js` | `auth.js`: sign up, log in and out, password hashing (scrypt) and sessions, and the rule that the first account takes over the data saved before accounts existed; `server.js` turns the session cookie into whose portfolio a request is for, and sends logged-out requests to the login page (pages) or a 401 (API). `service.js` orchestrates each use case for that user (every function takes the user's id first, with no default): add/edit/remove a holding, import holdings from CSV (all or nothing, no duplicates) and export them, build the portfolio view with live prices, connect/sync/disconnect a brokerage, resolve sync conflicts, build recommendations and the written summary. Asks the Domain to decide and the Data tier to load and save. `server.js` only parses requests and maps results and errors to HTTP status codes. `config.js` reads the settings from the environment once; `server.js` hands them down through `service.configure()`. |
+| **Domain** | `src/domain.js`, `src/insights.js`, `src/advice.js`, `src/accounts.js`, `src/holdingsCsv.js` | The rules, as pure functions. `accounts.js`: what makes a valid username and password. `holdingsCsv.js`: reading holdings from a CSV file (column names, number and date formats) and writing them out (with cells a spreadsheet could run as formulas made safe). `domain.js`: what makes a holding valid (ticker format, shares and price > 0, date not in the future); merging purchases into one row per ticker; value, total value and gain/loss (per holding and overall); allocation by ticker; value and amount invested per day for the value-over-time chart, and the same money in an index fund for the comparison line (`BENCHMARKS` lists the four funds); applying the user's changes to synced holdings and detecting conflicts with fresh brokerage data. `insights.js`: the diversification score and concentration risk; headline sentiment; deciding which news is about which holding; the recommendation rules. `advice.js`: the facts given to the AI model, the checks on what it writes, and the rules-only summary. No I/O. |
 | **Data** | `src/data.js`, `src/snaptrade.js`, `src/prices.js`, `src/news.js`, `src/claude.js` | `data.js`: all SQLite access (accounts and sessions; each user's holdings, brokerage accounts, positions, buy history, and changes to synced holdings). `snaptrade.js`: the only code that uses the SnapTrade keys or calls SnapTrade; converts its data into Folio's shape. `prices.js`: the only code that fetches market prices (Yahoo Finance, with Finnhub as a backup), with a one-minute cache, and daily price history for the value-over-time chart (Yahoo, one-hour cache). `news.js`: the only code that fetches news (Finnhub company news, with Yahoo Finance as a backup), with a 15-minute cache. `claude.js`: the only code that calls the Claude API (optional), with a 6-hour cache per set of facts. |
 
 **Dependency rule:** dependencies point one way: Presentation → Service →
@@ -183,8 +193,8 @@ Domain, and Service → Data. The Domain depends on nothing (it imports no other
 module), the Data tier never calls up into Service or Domain, and the
 Presentation tier reaches the server only over HTTP. In code this is visible
 in the `require` calls: `server.js` imports only `config.js`, `service.js` and `auth.js`; `service.js`
-imports `domain.js`, `insights.js`, `advice.js`, `data.js`, `snaptrade.js`, `prices.js`, `news.js` and `claude.js`;
-`auth.js` imports `accounts.js` and `data.js`; the four Domain files import nothing.
+imports `domain.js`, `insights.js`, `advice.js`, `holdingsCsv.js`, `data.js`, `snaptrade.js`, `prices.js`, `news.js` and `claude.js`;
+`auth.js` imports `accounts.js` and `data.js`; the five Domain files import nothing.
 
 ### C4 — Context
 
@@ -212,7 +222,7 @@ flowchart LR
         direction TB
         ui[Web UI<br/>Presentation · public/<br/>-shows holdings, value, gain/loss<br/>-shows score, recommendations, news<br/>-collects holding entry & edits]
         service[Application Service<br/>server.js, src/service.js, src/auth.js<br/>-sign up, log in, sessions<br/>-orchestrates add/edit/remove<br/>-builds portfolio summary & value history<br/>-connects & syncs brokerage<br/>-builds recommendations]
-        domain[Domain Model<br/>src/domain.js, src/insights.js,<br/>src/advice.js, src/accounts.js<br/>-validates holdings and accounts<br/>-value, gain/loss, value over time, sync conflicts<br/>-risk score, news matching, recommendations<br/>-facts for the AI, checks on its answer]
+        domain[Domain Model<br/>src/domain.js, src/insights.js,<br/>src/advice.js, src/accounts.js, src/holdingsCsv.js<br/>-validates holdings and accounts<br/>-reads & writes holdings as CSV<br/>-value, gain/loss, value over time, sync conflicts<br/>-risk score, news matching, recommendations<br/>-facts for the AI, checks on its answer]
         data[Data Layer<br/>src/data.js, src/snaptrade.js,<br/>src/prices.js, src/news.js, src/claude.js<br/>-persists accounts, sessions, holdings & synced data<br/>-wraps SnapTrade, price, news and Claude clients]
         ui --> service --> domain
         service --> data
