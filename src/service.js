@@ -26,6 +26,7 @@ const {
   generateInsights,
 } = require('./insights');
 const { buildAdvisorBrief, validateAdvice, fallbackAdvice } = require('./advice');
+const { readHoldingsCsv, writeHoldingsCsv } = require('./holdingsCsv');
 const data = require('./data');
 const snaptrade = require('./snaptrade');
 const prices = require('./prices');
@@ -165,6 +166,50 @@ function updateHolding(userId, id, input) {
 
 function removeHolding(userId, id) {
   if (!data.deleteHolding(userId, id)) throw new NotFoundError();
+}
+
+// ---- Importing and exporting holdings (CSV) ----
+
+// Adds the purchases in a CSV file (see holdingsCsv.js for the format). All or
+// nothing: every row gets the same checks as the Add holding form, and if any row
+// fails, nothing is saved and every problem is returned, by spreadsheet row.
+// A row that matches a purchase already in the portfolio (same ticker, shares,
+// price and date) isn't added again, so importing a file twice, or importing an
+// export back into the same account, doesn't double anything.
+// Returns { imported, duplicates, skipped, errors: [{ row, field?, message }] }:
+// skipped counts synced-holding rows, which come from the brokerage instead.
+function importHoldings(userId, csvText) {
+  const { rows, skipped, errors: fileErrors } = readHoldingsCsv(csvText);
+  if (fileErrors.length > 0) return { imported: 0, duplicates: 0, skipped, errors: fileErrors };
+
+  const errors = [];
+  const valid = [];
+  for (const { row, input } of rows) {
+    const { holding, errors: fieldErrors } = validateHolding(input);
+    for (const [field, message] of Object.entries(fieldErrors)) errors.push({ row, field, message });
+    if (Object.keys(fieldErrors).length === 0) valid.push(holding);
+  }
+  if (errors.length > 0) return { imported: 0, duplicates: 0, skipped, errors };
+
+  // Each existing purchase can stand in for one identical row in the file.
+  const key = (h) => [h.ticker, h.shares, h.purchasePrice, h.purchaseDate].join('|');
+  const existing = new Map();
+  for (const h of data.loadHoldings(userId)) existing.set(key(h), (existing.get(key(h)) ?? 0) + 1);
+  const toSave = valid.filter((h) => {
+    const left = existing.get(key(h)) ?? 0;
+    if (left > 0) existing.set(key(h), left - 1);
+    return left === 0;
+  });
+
+  data.transaction(() => toSave.forEach((h) => data.saveHolding(userId, h)));
+  return { imported: toSave.length, duplicates: valid.length - toSave.length, skipped, errors: [] };
+}
+
+// The user's holdings as CSV text: manual purchases, then synced holdings (with
+// the user's changes applied). No prices are fetched; the file is what they own.
+function exportHoldings(userId) {
+  const positions = applyOverrides(data.loadBrokeragePositions(userId), data.loadOverrides(userId));
+  return writeHoldingsCsv(data.loadHoldings(userId), positions);
 }
 
 // ---- Changes to synced holdings ----
@@ -342,6 +387,8 @@ module.exports = {
   addHolding,
   updateHolding,
   removeHolding,
+  importHoldings,
+  exportHoldings,
   editBrokeragePosition,
   removeBrokeragePosition,
   resolveSyncConflicts,
