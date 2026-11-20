@@ -227,6 +227,16 @@ function chartLots(row, buys) {
   return { lots, undatedShares };
 }
 
+// Index funds the value-over-time chart can compare with. Each one tracks a
+// major US index, so "what if this money had been in the index" is a real choice
+// a beginner could have made, and its prices come from the same source as stocks.
+const BENCHMARKS = {
+  sp500: { name: 'S&P 500', ticker: 'SPY' },
+  nasdaq100: { name: 'Nasdaq-100', ticker: 'QQQ' },
+  dow: { name: 'Dow Jones', ticker: 'DIA' },
+  total: { name: 'US total market', ticker: 'VTI' },
+};
+
 // The portfolio's market value on each trading day, next to how much money was in
 // it by then. Built from what the user holds today, so it shows "what my holdings
 // were worth", not a record of past sales.
@@ -238,14 +248,21 @@ function chartLots(row, buys) {
 //   the chart ends on the same total as the summary tiles.
 // buys: past brokerage buys ({ accountId, ticker, shares, purchaseDate }), the same
 //   list consolidateHoldings gets.
+// benchmark: optional { closes: [{ date, close }] oldest first, livePrice } for an
+//   index fund. Each point then also has benchmark: what the same money would be
+//   worth in that fund. Every purchase "also buys" the fund for the same amount on
+//   the day the chart starts counting it (its purchase date, or the chart's first
+//   day for older purchases), so the two lines start together and only the
+//   difference in performance separates them. Money added later goes into both on
+//   the same day.
 //
 // A day only counts the holdings that are owned by then and have a close on or
 // before it, in both value and invested, so the gap between the lines is always
 // the gain on the same set of holdings. Days before anything was owned are dropped.
 // Shares with no known date count on every day.
-// Returns { points: [{ date, value, invested }], missing: [tickers with no history],
-//   undated: [tickers with shares that have no known date] }.
-function buildValueHistory(rows, history, { livePrices = new Map(), buys = [] } = {}) {
+// Returns { points: [{ date, value, invested, benchmark? }], missing: [tickers with
+//   no history], undated: [tickers with shares that have no known date] }.
+function buildValueHistory(rows, history, { livePrices = new Map(), buys = [], benchmark = null } = {}) {
   const tracked = rows.filter((r) => history.get(r.ticker)?.length > 0);
   const missing = rows.filter((r) => !tracked.includes(r)).map((r) => r.ticker);
   const dates = [...new Set(tracked.flatMap((r) => history.get(r.ticker).map((p) => p.date)))].sort();
@@ -256,11 +273,24 @@ function buildValueHistory(rows, history, { livePrices = new Map(), buys = [] } 
   const cursors = tracked.map((r) => ({ row: r, closes: history.get(r.ticker), i: -1, ...chartLots(r, buys) }));
   const undated = cursors.filter((c) => c.undatedShares > 0).map((c) => c.row.ticker);
   const cents = (n) => Math.round(n * 100) / 100;
+
+  // The index fund's close on a date, carried forward like the holdings' closes
+  // (its first close if it has none that early).
+  const bench = benchmark?.closes?.length > 0 ? { closes: benchmark.closes, i: -1 } : null;
+  const benchClose = (date) => {
+    while (bench.i + 1 < bench.closes.length && bench.closes[bench.i + 1].date <= date) bench.i += 1;
+    if (date === lastDate && benchmark.livePrice > 0) return benchmark.livePrice;
+    return bench.closes[Math.max(bench.i, 0)].close;
+  };
+  const fundShares = new Map(); // lot -> shares of the index fund the same money bought
+
   const points = [];
   for (const date of dates) {
     let value = 0;
     let invested = 0;
+    let benchValue = 0;
     let owned = false;
+    const fundClose = bench ? benchClose(date) : null;
     for (const c of cursors) {
       while (c.i + 1 < c.closes.length && c.closes[c.i + 1].date <= date) c.i += 1;
       if (c.i < 0) continue; // no close yet on this date (e.g. listed later)
@@ -271,14 +301,22 @@ function buildValueHistory(rows, history, { livePrices = new Map(), buys = [] } 
         owned = true;
         value += lot.shares * close;
         invested += lot.shares * lot.purchasePrice;
+        if (bench) {
+          if (!fundShares.has(lot)) fundShares.set(lot, (lot.shares * close) / fundClose);
+          benchValue += fundShares.get(lot) * fundClose;
+        }
       }
     }
-    if (owned) points.push({ date, value: cents(value), invested: cents(invested) });
+    if (!owned) continue;
+    const point = { date, value: cents(value), invested: cents(invested) };
+    if (bench) point.benchmark = cents(benchValue);
+    points.push(point);
   }
   return { points, missing, undated };
 }
 
 module.exports = {
+  BENCHMARKS,
   buildValueHistory,
   validateHolding,
   validatePositionEdit,

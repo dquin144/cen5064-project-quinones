@@ -73,7 +73,9 @@
 
   // ---- Value over time ----
 
-  function valueChart(container, points, { range = '1y', tooltip = null, emptyText = '' } = {}) {
+  // benchmarkName: when the points have a benchmark value (the same money in an
+  // index fund), it's drawn as a dashed line and named in the tooltip and labels.
+  function valueChart(container, points, { range = '1y', tooltip = null, emptyText = '', benchmarkName = null } = {}) {
     container.replaceChildren();
     if (tooltip) {
       tooltip.hidden = true;
@@ -91,7 +93,8 @@
     const axisBand = 28;
     const height = top + plotHeight + axisBand;
 
-    const all = points.flatMap((p) => [p.value, p.invested]);
+    const hasBenchmark = benchmarkName !== null && points.every((p) => typeof p.benchmark === 'number');
+    const all = points.flatMap((p) => (hasBenchmark ? [p.value, p.invested, p.benchmark] : [p.value, p.invested]));
     const y = valueTicks(Math.min(...all), Math.max(...all));
     const longestTick = Math.max(...y.ticks.map((t) => y.format(t).length));
     const left = 10 + longestTick * 7;
@@ -110,9 +113,10 @@
       height,
       tabindex: '0',
       role: 'img',
-      'aria-label': `Line chart of market value and amount invested from ${longDate.format(new Date(t0))} to `
-        + `${longDate.format(new Date(t1))}. Ends at ${money.format(last.value)} market value and `
-        + `${money.format(last.invested)} invested. Use the left and right arrow keys to read each day.`,
+      'aria-label': `Line chart of market value and amount invested${hasBenchmark ? `, and the same money in the ${benchmarkName}` : ''}, `
+        + `from ${longDate.format(new Date(t0))} to ${longDate.format(new Date(t1))}. Ends at ${money.format(last.value)} market value, `
+        + `${money.format(last.invested)} invested${hasBenchmark ? ` and ${money.format(last.benchmark)} in the ${benchmarkName}` : ''}. `
+        + 'Use the left and right arrow keys to read each day.',
     }, container);
 
     // Gridlines and value labels (recessive), then the baseline.
@@ -152,6 +156,11 @@
     }
     const line = { fill: 'none', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' };
     svg('path', { d: investedPath, stroke: 'var(--series-invested)', ...line }, root);
+    // The comparison is dashed, so it's told apart by more than its color.
+    if (hasBenchmark) {
+      const benchPath = points.map((p, i) => `${i ? 'L' : 'M'}${xs[i].toFixed(1)},${yOf(p.benchmark).toFixed(1)}`).join('');
+      svg('path', { d: benchPath, stroke: 'var(--series-benchmark)', 'stroke-dasharray': '5 4', ...line }, root);
+    }
     svg('path', { d: valuePath, stroke: 'var(--series-value)', ...line }, root);
 
     // End markers and labels. If the two ends are too close, label only the value
@@ -159,23 +168,36 @@
     const endX = xs.at(-1);
     const endValueY = yOf(last.value);
     const endInvestedY = yOf(last.invested);
+    const endBenchY = hasBenchmark ? yOf(last.benchmark) : null;
     const dot = (cx, cy, color) => svg('circle', { cx, cy, r: 4, fill: color, stroke: 'var(--card)', 'stroke-width': 2 }, root);
     dot(endX, endInvestedY, 'var(--series-invested)');
+    if (hasBenchmark) dot(endX, endBenchY, 'var(--series-benchmark)');
     dot(endX, endValueY, 'var(--series-value)');
     if (!narrow) {
       const endLabel = (cy, text, color) => {
         const t = svg('text', { x: endX + 10, y: cy + 4, 'font-size': 12, fill: color, 'font-weight': 600 }, root);
         t.textContent = text;
       };
-      endLabel(endValueY, compactOrFull(last.value), 'var(--ink)');
-      if (Math.abs(endValueY - endInvestedY) >= 16) endLabel(endInvestedY, compactOrFull(last.invested), 'var(--ink-soft)');
+      // Labels go on in order of importance, each only where it won't overlap one
+      // already placed (the legend and tooltip still name every line).
+      const placed = [];
+      const tryLabel = (cy, text, color) => {
+        if (placed.some((y) => Math.abs(y - cy) < 16)) return;
+        placed.push(cy);
+        endLabel(cy, text, color);
+      };
+      tryLabel(endValueY, compactOrFull(last.value), 'var(--ink)');
+      if (hasBenchmark) tryLabel(endBenchY, compactOrFull(last.benchmark), 'var(--ink-soft)');
+      tryLabel(endInvestedY, compactOrFull(last.invested), 'var(--ink-soft)');
     }
 
     // ---- Hover / keyboard layer: a crosshair that snaps to the nearest day ----
     const cross = svg('line', { y1: top, y2: bottom, stroke: 'var(--ink-soft)', 'stroke-opacity': 0.35, 'stroke-width': 1, visibility: 'hidden' }, root);
     const hoverInvested = dot(0, 0, 'var(--series-invested)');
+    const hoverBench = hasBenchmark ? dot(0, 0, 'var(--series-benchmark)') : null;
     const hoverValue = dot(0, 0, 'var(--series-value)');
-    for (const d of [hoverInvested, hoverValue]) d.setAttribute('visibility', 'hidden');
+    const hoverMarks = [cross, hoverInvested, hoverValue, ...(hoverBench ? [hoverBench] : [])];
+    for (const d of hoverMarks) d.setAttribute('visibility', 'hidden');
     const hit = svg('rect', { x: left, y: top, width: plotWidth, height: plotHeight, fill: 'transparent' }, root);
 
     let index = points.length - 1;
@@ -189,11 +211,15 @@
       hoverValue.setAttribute('cy', yOf(p.value));
       hoverInvested.setAttribute('cx', x);
       hoverInvested.setAttribute('cy', yOf(p.invested));
-      for (const node of [cross, hoverInvested, hoverValue]) node.setAttribute('visibility', 'visible');
-      if (tooltip) fillTooltip(tooltip, p, x, container, width);
+      if (hoverBench) {
+        hoverBench.setAttribute('cx', x);
+        hoverBench.setAttribute('cy', yOf(p.benchmark));
+      }
+      for (const node of hoverMarks) node.setAttribute('visibility', 'visible');
+      if (tooltip) fillTooltip(tooltip, p, x, container, width, hasBenchmark ? benchmarkName : null);
     }
     function hide() {
-      for (const node of [cross, hoverInvested, hoverValue]) node.setAttribute('visibility', 'hidden');
+      for (const node of hoverMarks) node.setAttribute('visibility', 'hidden');
       if (tooltip) tooltip.hidden = true;
     }
     function nearest(clientX) {
@@ -221,7 +247,7 @@
   const compactOrFull = (v) => (Math.abs(v) >= 100000 ? compactMoney.format(v) : wholeMoney.format(v));
 
   // Values lead, names follow; each series keyed by a short line in its color.
-  function fillTooltip(tip, p, x, container, width) {
+  function fillTooltip(tip, p, x, container, width, benchmarkName = null) {
     tip.replaceChildren();
     html('div', { className: 'tip-date', text: longDate.format(new Date(toTime(p.date))) }, tip);
     const row = (color, value, name) => {
@@ -231,12 +257,17 @@
       else key.style.visibility = 'hidden';
       html('strong', { text: value }, r);
       html('span', { text: name }, r);
+      return r;
     };
     row('var(--series-value)', money.format(p.value), 'Market value');
     row('var(--series-invested)', money.format(p.invested), 'Invested');
     const gain = p.value - p.invested;
     const pct = p.invested > 0 ? ` (${signedPct((gain / p.invested) * 100)})` : '';
     row(null, signedMoney(gain) + pct, 'Gain/loss');
+    if (benchmarkName) {
+      const benchRow = row('var(--series-benchmark)', money.format(p.benchmark), `Same money in the ${benchmarkName}`);
+      benchRow.querySelector('.key-line').classList.add('dashed');
+    }
 
     tip.hidden = false;
     const scale = container.clientWidth / width;

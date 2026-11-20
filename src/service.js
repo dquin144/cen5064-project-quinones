@@ -17,6 +17,7 @@ const {
   summarizePortfolio,
   allocatePortfolio,
   buildValueHistory,
+  BENCHMARKS,
 } = require('./domain');
 const {
   scorePortfolio,
@@ -202,15 +203,34 @@ async function resolveSyncConflicts(userId, keepMine) {
 
 // The portfolio's value over time, for the "Value over time" chart. range is one of
 // prices.HISTORY_RANGES ('1mo', '3mo', '6mo', '1y', '5y'; anything else means '1y').
-// Synced shares are dated from the brokerage's buy history. Never throws for price
-// problems: tickers without history are listed in missing, and tickers with shares
-// that have no known date in undated.
-async function getValueHistory(userId, { range = '1y' } = {}) {
+// Synced shares are dated from the brokerage's buy history. compare is a key of
+// domain.BENCHMARKS ('sp500', 'nasdaq100', 'dow', 'total'), or anything else for no
+// comparison; with one, each point also has benchmark (the same money in that index
+// fund). Never throws for price problems: tickers without history are listed in
+// missing, tickers with shares that have no known date in undated, and
+// compareMissing is true when the index fund's history couldn't be loaded.
+// Returns { range, points, missing, undated, compare: { id, name, ticker } | null,
+//   compareMissing }.
+async function getValueHistory(userId, { range = '1y', compare = null } = {}) {
   if (!prices.HISTORY_RANGES[range]) range = '1y';
+  const fund = Object.hasOwn(BENCHMARKS, compare ?? '') ? { id: compare, ...BENCHMARKS[compare] } : null;
   const { view: { rows }, quotes, buys } = await loadPortfolio(userId);
-  const history = rows.length > 0 ? await prices.getHistory(rows.map((r) => r.ticker), range) : new Map();
+  if (rows.length === 0) return { range, points: [], missing: [], undated: [], compare: fund, compareMissing: false };
+
+  const tickers = rows.map((r) => r.ticker);
+  const [history, fundQuote] = await Promise.all([
+    prices.getHistory(fund ? [...tickers, fund.ticker] : tickers, range),
+    fund ? prices.getQuotes([fund.ticker]).then((q) => q.get(fund.ticker)) : null,
+  ]);
   const livePrices = new Map([...quotes].map(([ticker, q]) => [ticker, q.price]));
-  return { range, ...buildValueHistory(rows, history, { livePrices, buys }) };
+  const fundCloses = fund ? history.get(fund.ticker) : null;
+  const benchmark = fundCloses ? { closes: fundCloses, livePrice: fundQuote?.price ?? null } : null;
+  return {
+    range,
+    ...buildValueHistory(rows, history, { livePrices, buys, benchmark }),
+    compare: fund,
+    compareMissing: Boolean(fund) && !fundCloses,
+  };
 }
 
 // The risk score, rule-based insights and matched news for a loaded portfolio.
